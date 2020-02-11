@@ -15,8 +15,8 @@ export const {
   debugRenderPhaseSideEffectsForStrictMode,
   disableInputAttributeSyncing,
   enableTrustedTypesIntegration,
-  enableSelectiveHydration,
-  enableTrainModelFix,
+  deferPassiveEffectCleanupDuringUnmount,
+  warnAboutShorthandPropertyCollision,
 } = require('ReactFeatureFlags');
 
 // In www, we have experimental support for gathering data
@@ -33,15 +33,17 @@ export const enableSchedulerDebugging = true;
 
 export const replayFailedUnitOfWorkWithInvokeGuardedCallback = false;
 export const warnAboutDeprecatedLifecycles = true;
-export const warnAboutShorthandPropertyCollision = false;
 export const disableLegacyContext = false;
 export const warnAboutStringRefs = false;
 export const warnAboutDefaultPropsOnFunctionComponents = false;
 export const disableSchedulerTimeoutBasedOnReactExpirationTime = false;
 
+export const enableTrainModelFix = true;
+
 export const exposeConcurrentModeAPIs = __EXPERIMENTAL__;
 
 export const enableSuspenseServerRenderer = true;
+export const enableSelectiveHydration = true;
 
 export const enableChunksAPI = __EXPERIMENTAL__;
 
@@ -89,6 +91,20 @@ export const enableSuspenseCallback = true;
 export const flushSuspenseFallbacksInTests = true;
 
 export const enableNativeTargetAsInstance = false;
+
+export const disableCreateFactory = false;
+
+export const disableTextareaChildren = false;
+
+export const disableMapsAsChildren = false;
+
+export const disableUnstableRenderSubtreeIntoContainer = false;
+
+export const warnUnstableRenderSubtreeIntoContainer = false;
+
+export const disableUnstableCreatePortal = false;
+
+export const isTestEnvironment = false;
 
 // Flow magic to verify the exports of this file match the original version.
 // eslint-disable-next-line no-unused-vars

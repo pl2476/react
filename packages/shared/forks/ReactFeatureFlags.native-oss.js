@@ -24,7 +24,7 @@ export const enableChunksAPI = false;
 export const disableJavaScriptURLs = false;
 export const disableInputAttributeSyncing = false;
 export const exposeConcurrentModeAPIs = __EXPERIMENTAL__;
-export const warnAboutShorthandPropertyCollision = false;
+export const warnAboutShorthandPropertyCollision = true;
 export const enableSchedulerDebugging = false;
 export const enableDeprecatedFlareAPI = false;
 export const enableFundamentalAPI = false;
@@ -37,9 +37,17 @@ export const warnAboutDefaultPropsOnFunctionComponents = false;
 export const warnAboutStringRefs = false;
 export const disableLegacyContext = false;
 export const disableSchedulerTimeoutBasedOnReactExpirationTime = false;
-export const enableTrainModelFix = false;
+export const enableTrainModelFix = true;
 export const enableTrustedTypesIntegration = false;
 export const enableNativeTargetAsInstance = false;
+export const disableCreateFactory = false;
+export const disableTextareaChildren = false;
+export const disableMapsAsChildren = false;
+export const disableUnstableRenderSubtreeIntoContainer = false;
+export const warnUnstableRenderSubtreeIntoContainer = false;
+export const disableUnstableCreatePortal = false;
+export const deferPassiveEffectCleanupDuringUnmount = false;
+export const isTestEnvironment = false;
 
 // Only used in www builds.
 export function addUserTimingListener() {

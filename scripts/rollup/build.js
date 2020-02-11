@@ -410,7 +410,7 @@ function getPlugins(
     // Note that this plugin must be called after closure applies DCE.
     isProduction && stripUnusedImports(pureExternalModules),
     // Add the whitespace back if necessary.
-    shouldStayReadable && prettier({parser: 'babylon'}),
+    shouldStayReadable && prettier({parser: 'babel'}),
     // License and haste headers, top-level `if` blocks.
     {
       transformBundle(source) {
@@ -541,11 +541,6 @@ async function createBundle(bundle, bundleType) {
       bundle.moduleType,
       pureExternalModules
     ),
-    // We can't use getters in www.
-    legacy:
-      bundleType === FB_WWW_DEV ||
-      bundleType === FB_WWW_PROD ||
-      bundleType === FB_WWW_PROFILING,
   };
   const [mainOutputPath, ...otherOutputPaths] = Packaging.getBundleOutputPaths(
     bundleType,
