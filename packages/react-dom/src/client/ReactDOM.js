@@ -45,9 +45,11 @@ import {
   enqueueStateRestore,
   restoreStateIfNeeded,
 } from 'legacy-events/ReactControlledComponent';
-import {injection as EventPluginHubInjection} from 'legacy-events/EventPluginHub';
 import {runEventsInBatch} from 'legacy-events/EventBatching';
-import {eventNameDispatchConfigs} from 'legacy-events/EventPluginRegistry';
+import {
+  eventNameDispatchConfigs,
+  injectEventPluginsByName,
+} from 'legacy-events/EventPluginRegistry';
 import {
   accumulateTwoPhaseDispatches,
   accumulateDirectDispatches,
@@ -56,6 +58,7 @@ import ReactVersion from 'shared/ReactVersion';
 import invariant from 'shared/invariant';
 import {
   exposeConcurrentModeAPIs,
+  disableLegacyReactDOMAPIs,
   disableUnstableCreatePortal,
   disableUnstableRenderSubtreeIntoContainer,
   warnUnstableRenderSubtreeIntoContainer,
@@ -133,12 +136,6 @@ function createPortal(
 const ReactDOM: Object = {
   createPortal,
 
-  // Legacy
-  findDOMNode,
-  hydrate,
-  render,
-  unmountComponentAtNode,
-
   unstable_batchedUpdates: batchedUpdates,
 
   flushSync: flushSync,
@@ -150,7 +147,7 @@ const ReactDOM: Object = {
       getInstanceFromNode,
       getNodeFromInstance,
       getFiberCurrentPropsFromNode,
-      EventPluginHubInjection.injectEventPluginsByName,
+      injectEventPluginsByName,
       eventNameDispatchConfigs,
       accumulateTwoPhaseDispatches,
       accumulateDirectDispatches,
@@ -165,6 +162,13 @@ const ReactDOM: Object = {
 
   version: ReactVersion,
 };
+
+if (!disableLegacyReactDOMAPIs) {
+  ReactDOM.findDOMNode = findDOMNode;
+  ReactDOM.hydrate = hydrate;
+  ReactDOM.render = render;
+  ReactDOM.unmountComponentAtNode = unmountComponentAtNode;
+}
 
 if (exposeConcurrentModeAPIs) {
   ReactDOM.createRoot = createRoot;
