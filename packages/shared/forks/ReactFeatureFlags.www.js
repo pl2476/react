@@ -9,15 +9,23 @@
 
 import typeof * as FeatureFlagsType from 'shared/ReactFeatureFlags';
 import typeof * as ExportsType from './ReactFeatureFlags.www';
+import typeof * as DynamicFeatureFlags from './ReactFeatureFlags.www-dynamic';
 
 // Re-export dynamic flags from the www version.
+const dynamicFeatureFlags: DynamicFeatureFlags = require('ReactFeatureFlags');
+
 export const {
   debugRenderPhaseSideEffectsForStrictMode,
+  deferPassiveEffectCleanupDuringUnmount,
   disableInputAttributeSyncing,
   enableTrustedTypesIntegration,
-  deferPassiveEffectCleanupDuringUnmount,
+  runAllPassiveEffectDestroysBeforeCreates,
   warnAboutShorthandPropertyCollision,
-} = require('ReactFeatureFlags');
+  disableSchedulerTimeoutBasedOnReactExpirationTime,
+  warnAboutSpreadingKeyToJSX,
+  replayFailedUnitOfWorkWithInvokeGuardedCallback,
+  enableModernEventSystem,
+} = dynamicFeatureFlags;
 
 // On WWW, __EXPERIMENTAL__ is used for a new modern build.
 // It's not used anywhere in production yet.
@@ -31,24 +39,19 @@ export const {
 export let enableUserTimingAPI = __DEV__ && !__EXPERIMENTAL__;
 
 export const enableProfilerTimer = __PROFILE__;
+export const enableProfilerCommitHooks = false;
 export const enableSchedulerTracing = __PROFILE__;
 export const enableSchedulerDebugging = true;
 
-export const replayFailedUnitOfWorkWithInvokeGuardedCallback = false;
 export const warnAboutDeprecatedLifecycles = true;
 export const disableLegacyContext = __EXPERIMENTAL__;
 export const warnAboutStringRefs = false;
 export const warnAboutDefaultPropsOnFunctionComponents = false;
-export const disableSchedulerTimeoutBasedOnReactExpirationTime = false;
-
-export const enableTrainModelFix = true;
-
-export const exposeConcurrentModeAPIs = true;
 
 export const enableSuspenseServerRenderer = true;
 export const enableSelectiveHydration = true;
 
-export const enableChunksAPI = true;
+export const enableBlocksAPI = true;
 
 export const disableJavaScriptURLs = true;
 
@@ -85,31 +88,24 @@ export const enableFundamentalAPI = false;
 
 export const enableScopeAPI = true;
 
-export const enableJSXTransformAPI = true;
-
 export const warnAboutUnmockedScheduler = true;
 
 export const enableSuspenseCallback = true;
 
 export const flushSuspenseFallbacksInTests = true;
 
-export const enableNativeTargetAsInstance = false;
-
-export const disableCreateFactory = __EXPERIMENTAL__;
-
-export const disableLegacyReactDOMAPIs = __EXPERIMENTAL__;
-
 export const disableTextareaChildren = __EXPERIMENTAL__;
 
 export const disableMapsAsChildren = __EXPERIMENTAL__;
 
-export const disableUnstableRenderSubtreeIntoContainer = __EXPERIMENTAL__;
+export const disableModulePatternComponents = __EXPERIMENTAL__;
 
 export const warnUnstableRenderSubtreeIntoContainer = false;
 
-export const disableUnstableCreatePortal = __EXPERIMENTAL__;
+export const enableLegacyFBPrimerSupport = !__EXPERIMENTAL__;
 
-export const isTestEnvironment = false;
+// Internal-only attempt to debug a React Native issue. See D20130868.
+export const throwEarlyForMysteriousError = false;
 
 // Flow magic to verify the exports of this file match the original version.
 // eslint-disable-next-line no-unused-vars

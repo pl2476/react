@@ -533,6 +533,13 @@ function createReactNoop(reconciler: Function, useMutation: boolean) {
           newChildren: Array<Instance | TextInstance>,
         ): void {
           container.pendingChildren = newChildren;
+          if (
+            newChildren.length === 1 &&
+            newChildren[0].text === 'Error when completing root'
+          ) {
+            // Trigger an error for testing purposes
+            throw Error('Error when completing root');
+          }
         },
 
         replaceContainerChildren(
@@ -761,6 +768,32 @@ function createReactNoop(reconciler: Function, useMutation: boolean) {
       const fiberRoot = NoopRenderer.createContainer(
         container,
         BlockingRoot,
+        false,
+        null,
+      );
+      return {
+        _Scheduler: Scheduler,
+        render(children: ReactNodeList) {
+          NoopRenderer.updateContainer(children, fiberRoot, null, null);
+        },
+        getChildren() {
+          return getChildren(container);
+        },
+        getChildrenAsJSX() {
+          return getChildrenAsJSX(container);
+        },
+      };
+    },
+
+    createLegacyRoot() {
+      const container = {
+        rootID: '' + idCounter++,
+        pendingChildren: [],
+        children: [],
+      };
+      const fiberRoot = NoopRenderer.createContainer(
+        container,
+        LegacyRoot,
         false,
         null,
       );

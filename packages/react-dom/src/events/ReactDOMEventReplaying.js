@@ -16,6 +16,7 @@ import type {FiberRoot} from 'react-reconciler/src/ReactFiberRoot';
 import {
   enableDeprecatedFlareAPI,
   enableSelectiveHydration,
+  enableModernEventSystem,
 } from 'shared/ReactFeatureFlags';
 import {
   unstable_runWithPriority as runWithPriority,
@@ -27,15 +28,12 @@ import {
   getNearestMountedFiber,
   getContainerFromFiber,
   getSuspenseInstanceFromFiber,
-} from 'react-reconciler/reflection';
+} from 'react-reconciler/src/ReactFiberTreeReflection';
 import {
   attemptToDispatchEvent,
   addResponderEventSystemEvent,
 } from './ReactDOMEventListener';
-import {
-  getListenerMapForElement,
-  listenToTopLevel,
-} from './ReactBrowserEventEmitter';
+import {getListenerMapForElement} from './DOMEventListenerMap';
 import {
   getInstanceFromNode,
   getClosestInstanceFromNode,
@@ -120,12 +118,15 @@ import {
   TOP_BLUR,
 } from './DOMTopLevelEventTypes';
 import {IS_REPLAYED} from 'legacy-events/EventSystemFlags';
+import {legacyListenToTopLevelEvent} from './DOMLegacyEventPluginSystem';
+import {listenToTopLevelEvent} from './DOMModernPluginEventSystem';
 
 type QueuedReplayableEvent = {|
   blockedOn: null | Container | SuspenseInstance,
   topLevelType: DOMTopLevelEventType,
   eventSystemFlags: EventSystemFlags,
   nativeEvent: AnyNativeEvent,
+  container: Document | Element,
 |};
 
 let hasScheduledReplayAttempt = false;
@@ -212,12 +213,22 @@ export function isReplayableDiscreteEvent(
   return discreteReplayableEvents.indexOf(eventType) > -1;
 }
 
-function trapReplayableEvent(
+function trapReplayableEventForContainer(
+  topLevelType: DOMTopLevelEventType,
+  container: Container,
+  listenerMap: Map<DOMTopLevelEventType | string, null | (any => void)>,
+) {
+  listenToTopLevelEvent(topLevelType, ((container: any): Element), listenerMap);
+}
+
+function trapReplayableEventForDocument(
   topLevelType: DOMTopLevelEventType,
   document: Document,
   listenerMap: Map<DOMTopLevelEventType | string, null | (any => void)>,
 ) {
-  listenToTopLevel(topLevelType, document, listenerMap);
+  if (!enableModernEventSystem) {
+    legacyListenToTopLevelEvent(topLevelType, document, listenerMap);
+  }
   if (enableDeprecatedFlareAPI) {
     // Trap events for the responder system.
     const topLevelTypeString = unsafeCastDOMTopLevelTypeToString(topLevelType);
@@ -237,15 +248,36 @@ function trapReplayableEvent(
   }
 }
 
-export function eagerlyTrapReplayableEvents(document: Document) {
-  const listenerMap = getListenerMapForElement(document);
+export function eagerlyTrapReplayableEvents(
+  container: Container,
+  document: Document,
+) {
+  const listenerMapForDoc = getListenerMapForElement(document);
+  let listenerMapForContainer;
+  if (enableModernEventSystem) {
+    listenerMapForContainer = getListenerMapForElement(container);
+  }
   // Discrete
   discreteReplayableEvents.forEach(topLevelType => {
-    trapReplayableEvent(topLevelType, document, listenerMap);
+    if (enableModernEventSystem) {
+      trapReplayableEventForContainer(
+        topLevelType,
+        container,
+        listenerMapForContainer,
+      );
+    }
+    trapReplayableEventForDocument(topLevelType, document, listenerMapForDoc);
   });
   // Continuous
   continuousReplayableEvents.forEach(topLevelType => {
-    trapReplayableEvent(topLevelType, document, listenerMap);
+    if (enableModernEventSystem) {
+      trapReplayableEventForContainer(
+        topLevelType,
+        container,
+        listenerMapForContainer,
+      );
+    }
+    trapReplayableEventForDocument(topLevelType, document, listenerMapForDoc);
   });
 }
 
@@ -253,6 +285,7 @@ function createQueuedReplayableEvent(
   blockedOn: null | Container | SuspenseInstance,
   topLevelType: DOMTopLevelEventType,
   eventSystemFlags: EventSystemFlags,
+  container: Document | Element,
   nativeEvent: AnyNativeEvent,
 ): QueuedReplayableEvent {
   return {
@@ -260,6 +293,7 @@ function createQueuedReplayableEvent(
     topLevelType,
     eventSystemFlags: eventSystemFlags | IS_REPLAYED,
     nativeEvent,
+    container,
   };
 }
 
@@ -267,12 +301,14 @@ export function queueDiscreteEvent(
   blockedOn: null | Container | SuspenseInstance,
   topLevelType: DOMTopLevelEventType,
   eventSystemFlags: EventSystemFlags,
+  container: Document | Element,
   nativeEvent: AnyNativeEvent,
 ): void {
   const queuedEvent = createQueuedReplayableEvent(
     blockedOn,
     topLevelType,
     eventSystemFlags,
+    container,
     nativeEvent,
   );
   queuedDiscreteEvents.push(queuedEvent);
@@ -340,6 +376,7 @@ function accumulateOrCreateContinuousQueuedReplayableEvent(
   blockedOn: null | Container | SuspenseInstance,
   topLevelType: DOMTopLevelEventType,
   eventSystemFlags: EventSystemFlags,
+  container: Document | Element,
   nativeEvent: AnyNativeEvent,
 ): QueuedReplayableEvent {
   if (
@@ -350,6 +387,7 @@ function accumulateOrCreateContinuousQueuedReplayableEvent(
       blockedOn,
       topLevelType,
       eventSystemFlags,
+      container,
       nativeEvent,
     );
     if (blockedOn !== null) {
@@ -373,6 +411,7 @@ export function queueIfContinuousEvent(
   blockedOn: null | Container | SuspenseInstance,
   topLevelType: DOMTopLevelEventType,
   eventSystemFlags: EventSystemFlags,
+  container: Document | Element,
   nativeEvent: AnyNativeEvent,
 ): boolean {
   // These set relatedTarget to null because the replayed event will be treated as if we
@@ -386,6 +425,7 @@ export function queueIfContinuousEvent(
         blockedOn,
         topLevelType,
         eventSystemFlags,
+        container,
         focusEvent,
       );
       return true;
@@ -397,6 +437,7 @@ export function queueIfContinuousEvent(
         blockedOn,
         topLevelType,
         eventSystemFlags,
+        container,
         dragEvent,
       );
       return true;
@@ -408,6 +449,7 @@ export function queueIfContinuousEvent(
         blockedOn,
         topLevelType,
         eventSystemFlags,
+        container,
         mouseEvent,
       );
       return true;
@@ -422,6 +464,7 @@ export function queueIfContinuousEvent(
           blockedOn,
           topLevelType,
           eventSystemFlags,
+          container,
           pointerEvent,
         ),
       );
@@ -437,6 +480,7 @@ export function queueIfContinuousEvent(
           blockedOn,
           topLevelType,
           eventSystemFlags,
+          container,
           pointerEvent,
         ),
       );
@@ -513,6 +557,7 @@ function attemptReplayContinuousQueuedEvent(
   let nextBlockedOn = attemptToDispatchEvent(
     queuedEvent.topLevelType,
     queuedEvent.eventSystemFlags,
+    queuedEvent.container,
     queuedEvent.nativeEvent,
   );
   if (nextBlockedOn !== null) {
@@ -555,6 +600,7 @@ function replayUnblockedEvents() {
     let nextBlockedOn = attemptToDispatchEvent(
       nextDiscreteEvent.topLevelType,
       nextDiscreteEvent.eventSystemFlags,
+      nextDiscreteEvent.container,
       nextDiscreteEvent.nativeEvent,
     );
     if (nextBlockedOn !== null) {

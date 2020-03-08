@@ -33,7 +33,8 @@ import {
   enableFundamentalAPI,
   enableUserTimingAPI,
   enableScopeAPI,
-  enableChunksAPI,
+  enableBlocksAPI,
+  throwEarlyForMysteriousError,
 } from 'shared/ReactFeatureFlags';
 import {NoEffect, Placement} from 'shared/ReactSideEffectTags';
 import {ConcurrentRoot, BlockingRoot} from 'shared/ReactRootTags';
@@ -59,7 +60,7 @@ import {
   LazyComponent,
   FundamentalComponent,
   ScopeComponent,
-  Chunk,
+  Block,
 } from 'shared/ReactWorkTags';
 import getComponentName from 'shared/getComponentName';
 
@@ -91,7 +92,7 @@ import {
   REACT_LAZY_TYPE,
   REACT_FUNDAMENTAL_TYPE,
   REACT_SCOPE_TYPE,
-  REACT_CHUNK_TYPE,
+  REACT_BLOCK_TYPE,
 } from 'shared/ReactSymbols';
 
 let hasBadMapPolyfill;
@@ -391,9 +392,9 @@ export function resolveLazyComponentTag(Component: Function): WorkTag {
     if ($$typeof === REACT_MEMO_TYPE) {
       return MemoComponent;
     }
-    if (enableChunksAPI) {
-      if ($$typeof === REACT_CHUNK_TYPE) {
-        return Chunk;
+    if (enableBlocksAPI) {
+      if ($$typeof === REACT_BLOCK_TYPE) {
+        return Block;
       }
     }
   }
@@ -401,11 +402,7 @@ export function resolveLazyComponentTag(Component: Function): WorkTag {
 }
 
 // This is used to create an alternate fiber to do work on.
-export function createWorkInProgress(
-  current: Fiber,
-  pendingProps: any,
-  expirationTime: ExpirationTime,
-): Fiber {
+export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
   let workInProgress = current.alternate;
   if (workInProgress === null) {
     // We use a double buffering pooling technique because we know that we'll
@@ -454,6 +451,18 @@ export function createWorkInProgress(
       // But works for yielding (the common case) and should support resuming.
       workInProgress.actualDuration = 0;
       workInProgress.actualStartTime = -1;
+    }
+  }
+
+  if (throwEarlyForMysteriousError) {
+    // Trying to debug a mysterious internal-only production failure.
+    // See D20130868 and t62461245.
+    // This is only on for RN FB builds.
+    if (current == null) {
+      throw Error('current is ' + current + " but it can't be");
+    }
+    if (workInProgress == null) {
+      throw Error('workInProgress is ' + workInProgress + " but it can't be");
     }
   }
 
@@ -680,8 +689,8 @@ export function createFiberFromTypeAndProps(
               fiberTag = LazyComponent;
               resolvedType = null;
               break getTag;
-            case REACT_CHUNK_TYPE:
-              fiberTag = Chunk;
+            case REACT_BLOCK_TYPE:
+              fiberTag = Block;
               break getTag;
             case REACT_FUNDAMENTAL_TYPE:
               if (enableFundamentalAPI) {
@@ -817,13 +826,8 @@ function createFiberFromProfiler(
   key: null | string,
 ): Fiber {
   if (__DEV__) {
-    if (
-      typeof pendingProps.id !== 'string' ||
-      typeof pendingProps.onRender !== 'function'
-    ) {
-      console.error(
-        'Profiler must specify an "id" string and "onRender" function as props',
-      );
+    if (typeof pendingProps.id !== 'string') {
+      console.error('Profiler must specify an "id" as a prop');
     }
   }
 
@@ -832,6 +836,13 @@ function createFiberFromProfiler(
   fiber.elementType = REACT_PROFILER_TYPE;
   fiber.type = REACT_PROFILER_TYPE;
   fiber.expirationTime = expirationTime;
+
+  if (enableProfilerTimer) {
+    fiber.stateNode = {
+      effectDuration: 0,
+      passiveEffectDuration: 0,
+    };
+  }
 
   return fiber;
 }
@@ -962,10 +973,10 @@ export function assignFiberPropertiesInDEV(
   }
   if (enableUserTimingAPI) {
     target._debugID = source._debugID;
+    target._debugIsCurrentlyTiming = source._debugIsCurrentlyTiming;
   }
   target._debugSource = source._debugSource;
   target._debugOwner = source._debugOwner;
-  target._debugIsCurrentlyTiming = source._debugIsCurrentlyTiming;
   target._debugNeedsRemount = source._debugNeedsRemount;
   target._debugHookTypes = source._debugHookTypes;
   return target;

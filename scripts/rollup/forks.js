@@ -22,8 +22,8 @@ const {RENDERER, RECONCILER} = moduleTypes;
 // If you need to replace a file with another file for a specific environment,
 // add it to this list with the logic for choosing the right replacement.
 const forks = Object.freeze({
-  // Optimization: for UMDs, use object-assign polyfill that is already a part
-  // of the React package instead of bundling it again.
+  // Optimization: for UMDs, use a version that we can inline into the React bundle.
+  // Use that from all other bundles.
   'object-assign': (bundleType, entry, dependencies) => {
     if (
       bundleType !== UMD_DEV &&
@@ -34,19 +34,23 @@ const forks = Object.freeze({
       // happens. Other bundles just require('object-assign') anyway.
       return null;
     }
+    if (entry === 'react') {
+      // Use the forked version that uses ES modules instead of CommonJS.
+      return 'shared/forks/object-assign.inline-umd.js';
+    }
     if (dependencies.indexOf('react') === -1) {
       // We can only apply the optimizations to bundle that depend on React
       // because we read assign() from an object exposed on React internals.
       return null;
     }
-    // We can use the fork!
+    // We can use the fork that reads the secret export!
     return 'shared/forks/object-assign.umd.js';
   },
 
   // Without this fork, importing `shared/ReactSharedInternals` inside
   // the `react` package itself would not work due to a cyclical dependency.
   'shared/ReactSharedInternals': (bundleType, entry, dependencies) => {
-    if (entry === 'react' || entry === 'react/testing') {
+    if (entry === 'react') {
       return 'react/src/ReactSharedInternals';
     }
     if (dependencies.indexOf('react') === -1) {
@@ -96,8 +100,6 @@ const forks = Object.freeze({
               `Unexpected entry (${entry}) and bundleType (${bundleType})`
             );
         }
-      case 'react-reconciler/persistent':
-        return 'shared/forks/ReactFeatureFlags.persistent.js';
       case 'react-test-renderer':
         switch (bundleType) {
           case FB_WWW_DEV:
@@ -107,7 +109,6 @@ const forks = Object.freeze({
         }
         return 'shared/forks/ReactFeatureFlags.test-renderer.js';
       case 'react-dom/testing':
-      case 'react/testing':
         switch (bundleType) {
           case FB_WWW_DEV:
           case FB_WWW_PROD:
@@ -297,7 +298,7 @@ const forks = Object.freeze({
     );
   },
 
-  'react-server/src/ReactServerHostConfig': (
+  'react-server/src/ReactServerStreamConfig': (
     bundleType,
     entry,
     dependencies,
@@ -315,11 +316,11 @@ const forks = Object.freeze({
         if (!rendererInfo.isServerSupported) {
           return null;
         }
-        return `react-server/src/forks/ReactServerHostConfig.${rendererInfo.shortName}.js`;
+        return `react-server/src/forks/ReactServerStreamConfig.${rendererInfo.shortName}.js`;
       }
     }
     throw new Error(
-      'Expected ReactServerHostConfig to always be replaced with a shim, but ' +
+      'Expected ReactServerStreamConfig to always be replaced with a shim, but ' +
         `found no mention of "${entry}" entry point in ./scripts/shared/inlinedHostConfigs.js. ` +
         'Did you mean to add it there to associate it with a specific renderer?'
     );
@@ -353,13 +354,13 @@ const forks = Object.freeze({
     );
   },
 
-  'react-flight/src/ReactFlightClientHostConfig': (
+  'react-client/src/ReactFlightClientHostConfig': (
     bundleType,
     entry,
     dependencies,
     moduleType
   ) => {
-    if (dependencies.indexOf('react-flight') !== -1) {
+    if (dependencies.indexOf('react-client') !== -1) {
       return null;
     }
     if (moduleType !== RENDERER && moduleType !== RECONCILER) {
@@ -371,7 +372,7 @@ const forks = Object.freeze({
         if (!rendererInfo.isServerSupported) {
           return null;
         }
-        return `react-flight/src/forks/ReactFlightClientHostConfig.${rendererInfo.shortName}.js`;
+        return `react-client/src/forks/ReactFlightClientHostConfig.${rendererInfo.shortName}.js`;
       }
     }
     throw new Error(

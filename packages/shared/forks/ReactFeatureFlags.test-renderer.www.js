@@ -17,11 +17,11 @@ export const enableUserTimingAPI = __DEV__;
 export const warnAboutDeprecatedLifecycles = true;
 export const replayFailedUnitOfWorkWithInvokeGuardedCallback = false;
 export const enableProfilerTimer = __PROFILE__;
+export const enableProfilerCommitHooks = false;
 export const enableSchedulerTracing = __PROFILE__;
 export const enableSuspenseServerRenderer = false;
 export const enableSelectiveHydration = false;
-export const enableChunksAPI = false;
-export const exposeConcurrentModeAPIs = __EXPERIMENTAL__;
+export const enableBlocksAPI = false;
 export const warnAboutShorthandPropertyCollision = true;
 export const enableSchedulerDebugging = false;
 export const disableJavaScriptURLs = false;
@@ -29,7 +29,6 @@ export const disableInputAttributeSyncing = false;
 export const enableDeprecatedFlareAPI = true;
 export const enableFundamentalAPI = false;
 export const enableScopeAPI = true;
-export const enableJSXTransformAPI = true;
 export const warnAboutUnmockedScheduler = true;
 export const flushSuspenseFallbacksInTests = true;
 export const enableSuspenseCallback = true;
@@ -37,18 +36,19 @@ export const warnAboutDefaultPropsOnFunctionComponents = false;
 export const warnAboutStringRefs = false;
 export const disableLegacyContext = false;
 export const disableSchedulerTimeoutBasedOnReactExpirationTime = false;
-export const enableTrainModelFix = true;
 export const enableTrustedTypesIntegration = false;
-export const enableNativeTargetAsInstance = false;
-export const disableCreateFactory = false;
-export const disableLegacyReactDOMAPIs = false;
 export const disableTextareaChildren = false;
 export const disableMapsAsChildren = false;
-export const disableUnstableRenderSubtreeIntoContainer = false;
+export const disableModulePatternComponents = false;
 export const warnUnstableRenderSubtreeIntoContainer = false;
-export const disableUnstableCreatePortal = false;
 export const deferPassiveEffectCleanupDuringUnmount = false;
-export const isTestEnvironment = true; // this should probably *never* change
+export const runAllPassiveEffectDestroysBeforeCreates = false;
+export const enableModernEventSystem = false;
+export const warnAboutSpreadingKeyToJSX = false;
+export const enableLegacyFBPrimerSupport = false;
+
+// Internal-only attempt to debug a React Native issue. See D20130868.
+export const throwEarlyForMysteriousError = false;
 
 // Only used in www builds.
 export function addUserTimingListener() {

@@ -7,7 +7,7 @@
  * @flow
  */
 
-import type {LazyComponent} from 'shared/ReactLazyComponent';
+import type {LazyComponent} from 'react/src/ReactLazy';
 
 import {
   REACT_CONTEXT_TYPE,
@@ -21,9 +21,10 @@ import {
   REACT_SUSPENSE_TYPE,
   REACT_SUSPENSE_LIST_TYPE,
   REACT_LAZY_TYPE,
-  REACT_CHUNK_TYPE,
+  REACT_BLOCK_TYPE,
 } from 'shared/ReactSymbols';
 import {refineResolvedLazyComponent} from 'shared/ReactLazyComponent';
+import type {ReactContext, ReactProviderType} from 'shared/ReactTypes';
 
 function getWrappedName(
   outerType: mixed,
@@ -35,6 +36,10 @@ function getWrappedName(
     (outerType: any).displayName ||
     (functionName !== '' ? `${wrapperName}(${functionName})` : wrapperName)
   );
+}
+
+function getContextName(type: ReactContext<any>) {
+  return type.displayName || 'Context';
 }
 
 function getComponentName(type: mixed): string | null {
@@ -73,14 +78,16 @@ function getComponentName(type: mixed): string | null {
   if (typeof type === 'object') {
     switch (type.$$typeof) {
       case REACT_CONTEXT_TYPE:
-        return 'Context.Consumer';
+        const context: ReactContext<any> = (type: any);
+        return getContextName(context) + '.Consumer';
       case REACT_PROVIDER_TYPE:
-        return 'Context.Provider';
+        const provider: ReactProviderType<any> = (type: any);
+        return getContextName(provider._context) + '.Provider';
       case REACT_FORWARD_REF_TYPE:
         return getWrappedName(type, type.render, 'ForwardRef');
       case REACT_MEMO_TYPE:
         return getComponentName(type.type);
-      case REACT_CHUNK_TYPE:
+      case REACT_BLOCK_TYPE:
         return getComponentName(type.render);
       case REACT_LAZY_TYPE: {
         const thenable: LazyComponent<mixed> = (type: any);

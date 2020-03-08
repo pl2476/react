@@ -32,7 +32,7 @@ import {
   getNearestMountedFiber,
   getContainerFromFiber,
   getSuspenseInstanceFromFiber,
-} from 'react-reconciler/reflection';
+} from 'react-reconciler/src/ReactFiberTreeReflection';
 import {HostRoot, SuspenseComponent} from 'shared/ReactWorkTags';
 import {
   type EventSystemFlags,
@@ -53,14 +53,19 @@ import {getClosestInstanceFromNode} from '../client/ReactDOMComponentTree';
 import {getRawEventName} from './DOMTopLevelEventTypes';
 import {passiveBrowserEventsSupported} from './checkPassiveEvents';
 
-import {enableDeprecatedFlareAPI} from 'shared/ReactFeatureFlags';
+import {
+  enableDeprecatedFlareAPI,
+  enableModernEventSystem,
+  enableLegacyFBPrimerSupport,
+} from 'shared/ReactFeatureFlags';
 import {
   UserBlockingEvent,
   ContinuousEvent,
   DiscreteEvent,
 } from 'shared/ReactTypes';
 import {getEventPriorityForPluginSystem} from './DOMEventProperties';
-import {dispatchEventForPluginEventSystem} from './DOMEventPluginSystem';
+import {dispatchEventForLegacyPluginEventSystem} from './DOMLegacyEventPluginSystem';
+import {dispatchEventForPluginEventSystem} from './DOMModernPluginEventSystem';
 
 const {
   unstable_UserBlockingPriority: UserBlockingPriority,
@@ -76,20 +81,6 @@ export function setEnabled(enabled: ?boolean) {
 
 export function isEnabled() {
   return _enabled;
-}
-
-export function trapBubbledEvent(
-  topLevelType: DOMTopLevelEventType,
-  element: Document | Element | Node,
-): void {
-  trapEventForPluginEventSystem(element, topLevelType, false);
-}
-
-export function trapCapturedEvent(
-  topLevelType: DOMTopLevelEventType,
-  element: Document | Element | Node,
-): void {
-  trapEventForPluginEventSystem(element, topLevelType, true);
 }
 
 export function addResponderEventSystemEvent(
@@ -119,6 +110,7 @@ export function addResponderEventSystemEvent(
     null,
     ((topLevelType: any): DOMTopLevelEventType),
     eventFlags,
+    document,
   );
   if (passiveBrowserEventsSupported) {
     addEventCaptureListenerWithPassiveFlag(
@@ -148,60 +140,109 @@ export function removeActiveResponderEventSystemEvent(
   }
 }
 
-function trapEventForPluginEventSystem(
-  element: Document | Element | Node,
+export function trapEventForPluginEventSystem(
+  container: Document | Element,
   topLevelType: DOMTopLevelEventType,
   capture: boolean,
+  legacyFBSupport?: boolean,
 ): void {
   let listener;
+  let listenerWrapper;
   switch (getEventPriorityForPluginSystem(topLevelType)) {
     case DiscreteEvent:
-      listener = dispatchDiscreteEvent.bind(
-        null,
-        topLevelType,
-        PLUGIN_EVENT_SYSTEM,
-      );
+      listenerWrapper = dispatchDiscreteEvent;
       break;
     case UserBlockingEvent:
-      listener = dispatchUserBlockingUpdate.bind(
-        null,
-        topLevelType,
-        PLUGIN_EVENT_SYSTEM,
-      );
+      listenerWrapper = dispatchUserBlockingUpdate;
       break;
     case ContinuousEvent:
     default:
-      listener = dispatchEvent.bind(null, topLevelType, PLUGIN_EVENT_SYSTEM);
+      listenerWrapper = dispatchEvent;
       break;
   }
+  listener = listenerWrapper.bind(
+    null,
+    topLevelType,
+    PLUGIN_EVENT_SYSTEM,
+    container,
+  );
 
   const rawEventName = getRawEventName(topLevelType);
+  let fbListener;
+
+  // When legacyFBSupport is enabled, it's for when we
+  // want to add a one time event listener to a container.
+  // This should only be used with enableLegacyFBPrimerSupport
+  // due to requirement to provide compatibility with
+  // internal FB www event tooling. This works by removing
+  // the event listener as soon as it is invoked. We could
+  // also attempt to use the {once: true} param on
+  // addEventListener, but that requires support and some
+  // browsers do not support this today, and given this is
+  // to support legacy code patterns, it's likely they'll
+  // need support for such browsers.
+  if (enableLegacyFBPrimerSupport && legacyFBSupport) {
+    const originalListener = listener;
+    listener = function(...p) {
+      try {
+        return originalListener.apply(this, p);
+      } finally {
+        if (fbListener) {
+          fbListener.remove();
+        } else {
+          container.removeEventListener(
+            ((rawEventName: any): string),
+            (listener: any),
+          );
+        }
+      }
+    };
+  }
   if (capture) {
-    addEventCaptureListener(element, rawEventName, listener);
+    fbListener = addEventCaptureListener(container, rawEventName, listener);
   } else {
-    addEventBubbleListener(element, rawEventName, listener);
+    fbListener = addEventBubbleListener(container, rawEventName, listener);
   }
 }
 
-function dispatchDiscreteEvent(topLevelType, eventSystemFlags, nativeEvent) {
+function dispatchDiscreteEvent(
+  topLevelType,
+  eventSystemFlags,
+  container,
+  nativeEvent,
+) {
   flushDiscreteUpdatesIfNeeded(nativeEvent.timeStamp);
-  discreteUpdates(dispatchEvent, topLevelType, eventSystemFlags, nativeEvent);
+  discreteUpdates(
+    dispatchEvent,
+    topLevelType,
+    eventSystemFlags,
+    container,
+    nativeEvent,
+  );
 }
 
 function dispatchUserBlockingUpdate(
   topLevelType,
   eventSystemFlags,
+  container,
   nativeEvent,
 ) {
   runWithPriority(
     UserBlockingPriority,
-    dispatchEvent.bind(null, topLevelType, eventSystemFlags, nativeEvent),
+    dispatchEvent.bind(
+      null,
+      topLevelType,
+      eventSystemFlags,
+      container,
+      nativeEvent,
+    ),
   );
 }
 
 export function dispatchEvent(
   topLevelType: DOMTopLevelEventType,
   eventSystemFlags: EventSystemFlags,
+  container: Document | Element,
   nativeEvent: AnyNativeEvent,
 ): void {
   if (!_enabled) {
@@ -215,6 +256,7 @@ export function dispatchEvent(
       null, // Flags that we're not actually blocked on anything as far as we know.
       topLevelType,
       eventSystemFlags,
+      container,
       nativeEvent,
     );
     return;
@@ -223,6 +265,7 @@ export function dispatchEvent(
   const blockedOn = attemptToDispatchEvent(
     topLevelType,
     eventSystemFlags,
+    container,
     nativeEvent,
   );
 
@@ -234,7 +277,13 @@ export function dispatchEvent(
 
   if (isReplayableDiscreteEvent(topLevelType)) {
     // This this to be replayed later once the target is available.
-    queueDiscreteEvent(blockedOn, topLevelType, eventSystemFlags, nativeEvent);
+    queueDiscreteEvent(
+      blockedOn,
+      topLevelType,
+      eventSystemFlags,
+      container,
+      nativeEvent,
+    );
     return;
   }
 
@@ -243,6 +292,7 @@ export function dispatchEvent(
       blockedOn,
       topLevelType,
       eventSystemFlags,
+      container,
       nativeEvent,
     )
   ) {
@@ -257,12 +307,22 @@ export function dispatchEvent(
   // in case the event system needs to trace it.
   if (enableDeprecatedFlareAPI) {
     if (eventSystemFlags & PLUGIN_EVENT_SYSTEM) {
-      dispatchEventForPluginEventSystem(
-        topLevelType,
-        eventSystemFlags,
-        nativeEvent,
-        null,
-      );
+      if (enableModernEventSystem) {
+        dispatchEventForPluginEventSystem(
+          topLevelType,
+          eventSystemFlags,
+          nativeEvent,
+          null,
+          container,
+        );
+      } else {
+        dispatchEventForLegacyPluginEventSystem(
+          topLevelType,
+          eventSystemFlags,
+          nativeEvent,
+          null,
+        );
+      }
     }
     if (eventSystemFlags & RESPONDER_EVENT_SYSTEM) {
       // React Flare event system
@@ -275,12 +335,22 @@ export function dispatchEvent(
       );
     }
   } else {
-    dispatchEventForPluginEventSystem(
-      topLevelType,
-      eventSystemFlags,
-      nativeEvent,
-      null,
-    );
+    if (enableModernEventSystem) {
+      dispatchEventForPluginEventSystem(
+        topLevelType,
+        eventSystemFlags,
+        nativeEvent,
+        null,
+        container,
+      );
+    } else {
+      dispatchEventForLegacyPluginEventSystem(
+        topLevelType,
+        eventSystemFlags,
+        nativeEvent,
+        null,
+      );
+    }
   }
 }
 
@@ -288,6 +358,7 @@ export function dispatchEvent(
 export function attemptToDispatchEvent(
   topLevelType: DOMTopLevelEventType,
   eventSystemFlags: EventSystemFlags,
+  container: Document | Element,
   nativeEvent: AnyNativeEvent,
 ): null | Container | SuspenseInstance {
   // TODO: Warn if _enabled is false.
@@ -335,12 +406,22 @@ export function attemptToDispatchEvent(
 
   if (enableDeprecatedFlareAPI) {
     if (eventSystemFlags & PLUGIN_EVENT_SYSTEM) {
-      dispatchEventForPluginEventSystem(
-        topLevelType,
-        eventSystemFlags,
-        nativeEvent,
-        targetInst,
-      );
+      if (enableModernEventSystem) {
+        dispatchEventForPluginEventSystem(
+          topLevelType,
+          eventSystemFlags,
+          nativeEvent,
+          targetInst,
+          container,
+        );
+      } else {
+        dispatchEventForLegacyPluginEventSystem(
+          topLevelType,
+          eventSystemFlags,
+          nativeEvent,
+          targetInst,
+        );
+      }
     }
     if (eventSystemFlags & RESPONDER_EVENT_SYSTEM) {
       // React Flare event system
@@ -353,12 +434,22 @@ export function attemptToDispatchEvent(
       );
     }
   } else {
-    dispatchEventForPluginEventSystem(
-      topLevelType,
-      eventSystemFlags,
-      nativeEvent,
-      targetInst,
-    );
+    if (enableModernEventSystem) {
+      dispatchEventForPluginEventSystem(
+        topLevelType,
+        eventSystemFlags,
+        nativeEvent,
+        targetInst,
+        container,
+      );
+    } else {
+      dispatchEventForLegacyPluginEventSystem(
+        topLevelType,
+        eventSystemFlags,
+        nativeEvent,
+        targetInst,
+      );
+    }
   }
   // We're not blocked on anything.
   return null;

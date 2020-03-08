@@ -8,7 +8,8 @@
  */
 
 import {copy} from 'clipboard-js';
-import React, {useCallback, useContext, useRef, useState} from 'react';
+import * as React from 'react';
+import {useCallback, useContext, useRef, useState} from 'react';
 import {BridgeContext, StoreContext} from '../context';
 import Button from '../Button';
 import ButtonIcon from '../ButtonIcon';
@@ -240,7 +241,7 @@ function HookView({canEditHooks, hook, id, inspectPath, path}: HookViewProps) {
   } else {
     let overrideValueFn = null;
     // TODO Maybe read editable value from debug hook?
-    if (canEditHooks && isStateEditable) {
+    if (canEditHooks && isStateEditable && hookID !== null) {
       overrideValueFn = (
         absolutePath: Array<string | number>,
         newValue: any,

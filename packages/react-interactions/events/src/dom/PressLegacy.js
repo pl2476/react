@@ -17,7 +17,7 @@ import type {
   ReactEventResponderListener,
 } from 'shared/ReactTypes';
 
-import React from 'react';
+import * as React from 'react';
 import {DiscreteEvent, UserBlockingEvent} from 'shared/ReactTypes';
 
 type PressProps = {|
@@ -126,6 +126,7 @@ const rootEventTypes = hasPointerEvents
       'click',
       'keyup',
       'scroll',
+      'blur',
     ]
   : [
       'click',
@@ -138,6 +139,7 @@ const rootEventTypes = hasPointerEvents
       'dragstart',
       'mouseup_active',
       'touchend',
+      'blur',
     ];
 
 function isFunction(obj): boolean {
@@ -881,6 +883,14 @@ const pressResponderImpl = {
       case 'touchcancel':
       case 'dragstart': {
         dispatchCancel(event, context, props, state);
+        break;
+      }
+      case 'blur': {
+        // If we encounter a blur that happens on the pressed target
+        // then disengage the blur.
+        if (isPressed && target === state.pressTarget) {
+          dispatchCancel(event, context, props, state);
+        }
       }
     }
   },
@@ -893,6 +903,7 @@ const pressResponderImpl = {
   },
 };
 
+// $FlowFixMe Can't add generic types without causing a parsing/syntax errors
 export const PressResponder = React.DEPRECATED_createResponder(
   'Press',
   pressResponderImpl,
@@ -900,6 +911,6 @@ export const PressResponder = React.DEPRECATED_createResponder(
 
 export function usePress(
   props: PressProps,
-): ReactEventResponderListener<any, any> {
+): ?ReactEventResponderListener<any, any> {
   return React.DEPRECATED_useResponder(PressResponder, props);
 }

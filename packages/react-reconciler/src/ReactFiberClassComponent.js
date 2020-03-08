@@ -11,7 +11,7 @@ import type {Fiber} from './ReactFiber';
 import type {ExpirationTime} from './ReactFiberExpirationTime';
 import type {UpdateQueue} from './ReactUpdateQueue';
 
-import React from 'react';
+import * as React from 'react';
 import {Update, Snapshot} from 'shared/ReactSideEffectTags';
 import {
   debugRenderPhaseSideEffectsForStrictMode,
@@ -19,7 +19,7 @@ import {
   warnAboutDeprecatedLifecycles,
 } from 'shared/ReactFeatureFlags';
 import ReactStrictModeWarnings from './ReactStrictModeWarnings';
-import {isMounted} from 'react-reconciler/reflection';
+import {isMounted} from 'react-reconciler/src/ReactFiberTreeReflection';
 import {get as getInstance, set as setInstance} from 'shared/ReactInstanceMap';
 import shallowEqual from 'shared/shallowEqual';
 import getComponentName from 'shared/getComponentName';
@@ -535,7 +535,6 @@ function constructClassInstance(
   workInProgress: Fiber,
   ctor: any,
   props: any,
-  renderExpirationTime: ExpirationTime,
 ): any {
   let isLegacyContextConsumer = false;
   let unmaskedContext = emptyContextObject;

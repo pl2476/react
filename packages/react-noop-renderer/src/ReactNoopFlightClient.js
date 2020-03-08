@@ -14,9 +14,9 @@
  * environment.
  */
 
-import type {ReactModelRoot} from 'react-flight/inline-typed';
+import type {ReactModelRoot} from 'react-client/flight';
 
-import ReactFlightClient from 'react-flight';
+import ReactFlightClient from 'react-client/flight';
 
 type Source = Array<string>;
 
@@ -38,6 +38,4 @@ function read<T>(source: Source): ReactModelRoot<T> {
   return getModelRoot(response);
 }
 
-export default {
-  read,
-};
+export {read};
