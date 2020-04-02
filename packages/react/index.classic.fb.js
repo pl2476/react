@@ -26,6 +26,8 @@ export {
   useReducer,
   useRef,
   useState,
+  useMutableSource,
+  createMutableSource,
   Fragment,
   Profiler,
   StrictMode,
@@ -48,8 +50,5 @@ export {
   DEPRECATED_createResponder,
   // enableScopeAPI
   unstable_createScope,
-  // enableJSXTransformAPI
-  jsx,
-  jsxs,
-  jsxDEV,
 } from './src/React';
+export {jsx, jsxs, jsxDEV} from './src/jsx/ReactJSX';

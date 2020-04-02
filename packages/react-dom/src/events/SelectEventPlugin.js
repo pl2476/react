@@ -5,10 +5,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-import {accumulateTwoPhaseDispatchesSingle} from 'legacy-events/EventPropagators';
 import {canUseDOM} from 'shared/ExecutionEnvironment';
 import SyntheticEvent from 'legacy-events/SyntheticEvent';
-import isTextInputElement from 'shared/isTextInputElement';
+import isTextInputElement from './isTextInputElement';
 import shallowEqual from 'shared/shallowEqual';
 
 import {
@@ -27,6 +26,7 @@ import {getNodeFromInstance} from '../client/ReactDOMComponentTree';
 import {hasSelectionCapabilities} from '../client/ReactInputSelection';
 import {DOCUMENT_NODE} from '../shared/HTMLNodeType';
 import {isListeningToAllDependencies} from './DOMEventListenerMap';
+import accumulateTwoPhaseListeners from './accumulateTwoPhaseListeners';
 
 const skipSelectionChangeEvent =
   canUseDOM && 'documentMode' in document && document.documentMode <= 11;
@@ -135,7 +135,7 @@ function constructSelectEvent(nativeEvent, nativeEventTarget) {
     syntheticEvent.type = 'select';
     syntheticEvent.target = activeElement;
 
-    accumulateTwoPhaseDispatchesSingle(syntheticEvent);
+    accumulateTwoPhaseListeners(syntheticEvent);
 
     return syntheticEvent;
   }

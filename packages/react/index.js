@@ -55,6 +55,8 @@ export {
   useReducer,
   useRef,
   useState,
+  useMutableSource,
+  createMutableSource,
   Fragment,
   Profiler,
   StrictMode,
@@ -74,7 +76,4 @@ export {
   DEPRECATED_createResponder,
   unstable_createFundamental,
   unstable_createScope,
-  jsx,
-  jsxs,
-  jsxDEV,
 } from './src/React';

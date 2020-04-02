@@ -8,16 +8,20 @@
  */
 
 import type {ReactModel} from 'react-server/src/ReactFlightServer';
+import type {
+  BundlerConfig,
+  Destination,
+} from './ReactFlightDOMRelayServerHostConfig';
 
 import {createRequest, startWork} from 'react-server/src/ReactFlightServer';
 
-type EncodedData = Array<string>;
-
-function render(model: ReactModel): EncodedData {
-  let data: EncodedData = [];
-  let request = createRequest(model, data);
+function render(
+  model: ReactModel,
+  destination: Destination,
+  config: BundlerConfig,
+): void {
+  const request = createRequest(model, destination, config);
   startWork(request);
-  return data;
 }
 
 export {render};

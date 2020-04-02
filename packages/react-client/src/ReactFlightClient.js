@@ -7,139 +7,154 @@
  * @flow
  */
 
-import type {Source, StringDecoder} from './ReactFlightClientHostConfig';
+import type {Wakeable} from 'shared/ReactTypes';
+import type {BlockComponent, BlockRenderFunction} from 'react/src/ReactBlock';
+import type {LazyComponent} from 'react/src/ReactLazy';
 
-import {
-  supportsBinaryStreams,
-  createStringDecoder,
-  readPartialStringChunk,
-  readFinalStringChunk,
+import type {
+  ModuleReference,
+  ModuleMetaData,
 } from './ReactFlightClientHostConfig';
 
-export type ReactModelRoot<T> = {|
-  model: T,
-|};
+import {
+  resolveModuleReference,
+  preloadModule,
+  requireModule,
+} from './ReactFlightClientHostConfig';
 
-type JSONValue =
+import {
+  REACT_LAZY_TYPE,
+  REACT_BLOCK_TYPE,
+  REACT_ELEMENT_TYPE,
+} from 'shared/ReactSymbols';
+
+export type JSONValue =
   | number
   | null
   | boolean
   | string
-  | {[key: string]: JSONValue, ...};
+  | {[key: string]: JSONValue}
+  | Array<JSONValue>;
 
 const PENDING = 0;
 const RESOLVED = 1;
 const ERRORED = 2;
 
-type PendingChunk = {|
-  status: 0,
-  value: Promise<void>,
-  resolve: () => void,
-|};
-type ResolvedChunk = {|
-  status: 1,
-  value: mixed,
-  resolve: null,
-|};
-type ErroredChunk = {|
-  status: 2,
-  value: Error,
-  resolve: null,
-|};
-type Chunk = PendingChunk | ResolvedChunk | ErroredChunk;
-
-type OpaqueResponseWithoutDecoder = {
-  source: Source,
-  partialRow: string,
-  modelRoot: ReactModelRoot<any>,
-  chunks: Map<number, Chunk>,
-  fromJSON: (key: string, value: JSONValue) => any,
-  ...
+type PendingChunk = {
+  _status: 0,
+  _value: null | Array<() => mixed>,
+  then(resolve: () => mixed): void,
 };
-
-type OpaqueResponse = OpaqueResponseWithoutDecoder & {
-  stringDecoder: StringDecoder,
-  ...
+type ResolvedChunk<T> = {
+  _status: 1,
+  _value: T,
+  then(resolve: () => mixed): void,
 };
+type ErroredChunk = {
+  _status: 2,
+  _value: Error,
+  then(resolve: () => mixed): void,
+};
+type SomeChunk<T> = PendingChunk | ResolvedChunk<T> | ErroredChunk;
 
-export function createResponse(source: Source): OpaqueResponse {
-  let modelRoot: ReactModelRoot<any> = ({}: any);
-  let rootChunk: Chunk = createPendingChunk();
-  definePendingProperty(modelRoot, 'model', rootChunk);
-  let chunks: Map<number, Chunk> = new Map();
-  chunks.set(0, rootChunk);
-
-  let response: OpaqueResponse = (({
-    source,
-    partialRow: '',
-    modelRoot,
-    chunks: chunks,
-    fromJSON: function(key, value) {
-      return parseFromJSON(response, this, key, value);
-    },
-  }: OpaqueResponseWithoutDecoder): any);
-  if (supportsBinaryStreams) {
-    response.stringDecoder = createStringDecoder();
+function Chunk(status: any, value: any) {
+  this._status = status;
+  this._value = value;
+}
+Chunk.prototype.then = function<T>(resolve: () => mixed) {
+  const chunk: SomeChunk<T> = this;
+  if (chunk._status === PENDING) {
+    if (chunk._value === null) {
+      chunk._value = [];
+    }
+    chunk._value.push(resolve);
+  } else {
+    resolve();
   }
+};
+
+export type Response<T> = {
+  partialRow: string,
+  rootChunk: SomeChunk<T>,
+  chunks: Map<number, SomeChunk<any>>,
+  readRoot(): T,
+};
+
+function readRoot<T>(): T {
+  const response: Response<T> = this;
+  const rootChunk = response.rootChunk;
+  if (rootChunk._status === RESOLVED) {
+    return rootChunk._value;
+  } else if (rootChunk._status === PENDING) {
+    // eslint-disable-next-line no-throw-literal
+    throw (rootChunk: Wakeable);
+  } else {
+    throw rootChunk._value;
+  }
+}
+
+export function createResponse<T>(): Response<T> {
+  const rootChunk: SomeChunk<any> = createPendingChunk();
+  const chunks: Map<number, SomeChunk<any>> = new Map();
+  chunks.set(0, rootChunk);
+  const response = {
+    partialRow: '',
+    rootChunk,
+    chunks: chunks,
+    readRoot: readRoot,
+  };
   return response;
 }
 
 function createPendingChunk(): PendingChunk {
-  let resolve: () => void = (null: any);
-  let promise = new Promise(r => (resolve = r));
-  return {
-    status: PENDING,
-    value: promise,
-    resolve: resolve,
-  };
+  return new Chunk(PENDING, null);
 }
 
 function createErrorChunk(error: Error): ErroredChunk {
-  return {
-    status: ERRORED,
-    value: error,
-    resolve: null,
-  };
+  return new Chunk(ERRORED, error);
 }
 
-function triggerErrorOnChunk(chunk: Chunk, error: Error): void {
-  if (chunk.status !== PENDING) {
+function wakeChunk(listeners: null | Array<() => mixed>) {
+  if (listeners !== null) {
+    for (let i = 0; i < listeners.length; i++) {
+      const listener = listeners[i];
+      listener();
+    }
+  }
+}
+
+function triggerErrorOnChunk<T>(chunk: SomeChunk<T>, error: Error): void {
+  if (chunk._status !== PENDING) {
     // We already resolved. We didn't expect to see this.
     return;
   }
-  let resolve = chunk.resolve;
-  let erroredChunk: ErroredChunk = (chunk: any);
-  erroredChunk.status = ERRORED;
-  erroredChunk.value = error;
-  erroredChunk.resolve = null;
-  resolve();
+  const listeners = chunk._value;
+  const erroredChunk: ErroredChunk = (chunk: any);
+  erroredChunk._status = ERRORED;
+  erroredChunk._value = error;
+  wakeChunk(listeners);
 }
 
-function createResolvedChunk(value: mixed): ResolvedChunk {
-  return {
-    status: RESOLVED,
-    value: value,
-    resolve: null,
-  };
+function createResolvedChunk<T>(value: T): ResolvedChunk<T> {
+  return new Chunk(RESOLVED, value);
 }
 
-function resolveChunk(chunk: Chunk, value: mixed): void {
-  if (chunk.status !== PENDING) {
+function resolveChunk<T>(chunk: SomeChunk<T>, value: T): void {
+  if (chunk._status !== PENDING) {
     // We already resolved. We didn't expect to see this.
     return;
   }
-  let resolve = chunk.resolve;
-  let resolvedChunk: ResolvedChunk = (chunk: any);
-  resolvedChunk.status = RESOLVED;
-  resolvedChunk.value = value;
-  resolvedChunk.resolve = null;
-  resolve();
+  const listeners = chunk._value;
+  const resolvedChunk: ResolvedChunk<T> = (chunk: any);
+  resolvedChunk._status = RESOLVED;
+  resolvedChunk._value = value;
+  wakeChunk(listeners);
 }
 
 // Report that any missing chunks in the model is now going to throw this
 // error upon read. Also notify any pending promises.
-export function reportGlobalError(
-  response: OpaqueResponse,
+export function reportGlobalError<T>(
+  response: Response<T>,
   error: Error,
 ): void {
   response.chunks.forEach(chunk => {
@@ -150,59 +165,160 @@ export function reportGlobalError(
   });
 }
 
-function definePendingProperty(
-  object: Object,
-  key: string,
-  chunk: Chunk,
-): void {
-  Object.defineProperty(object, key, {
-    configurable: false,
-    enumerable: true,
-    get() {
-      if (chunk.status === RESOLVED) {
-        return chunk.value;
-      } else {
-        throw chunk.value;
-      }
-    },
-  });
+function readMaybeChunk<T>(maybeChunk: SomeChunk<T> | T): T {
+  if (maybeChunk == null || !(maybeChunk instanceof Chunk)) {
+    // $FlowFixMe
+    return maybeChunk;
+  }
+  const chunk: SomeChunk<T> = (maybeChunk: any);
+  if (chunk._status === RESOLVED) {
+    return chunk._value;
+  } else if (chunk._status === PENDING) {
+    // eslint-disable-next-line no-throw-literal
+    throw (chunk: Wakeable);
+  } else {
+    throw chunk._value;
+  }
 }
 
-function parseFromJSON(
-  response: OpaqueResponse,
+function createElement(type, key, props): React$Element<any> {
+  const element: any = {
+    // This tag allows us to uniquely identify this as a React Element
+    $$typeof: REACT_ELEMENT_TYPE,
+
+    // Built-in properties that belong on the element
+    type: type,
+    key: key,
+    ref: null,
+    props: props,
+
+    // Record the component responsible for creating this element.
+    _owner: null,
+  };
+  if (__DEV__) {
+    // We don't really need to add any of these but keeping them for good measure.
+    // Unfortunately, _store is enumerable in jest matchers so for equality to
+    // work, I need to keep it or make _store non-enumerable in the other file.
+    element._store = {};
+    Object.defineProperty(element._store, 'validated', {
+      configurable: false,
+      enumerable: false,
+      writable: true,
+      value: true, // This element has already been validated on the server.
+    });
+    Object.defineProperty(element, '_self', {
+      configurable: false,
+      enumerable: false,
+      writable: false,
+      value: null,
+    });
+    Object.defineProperty(element, '_source', {
+      configurable: false,
+      enumerable: false,
+      writable: false,
+      value: null,
+    });
+  }
+  return element;
+}
+
+type UninitializedBlockPayload<Data> = [
+  mixed,
+  ModuleMetaData | SomeChunk<ModuleMetaData>,
+  Data | SomeChunk<Data>,
+];
+
+function initializeBlock<Props, Data>(
+  tuple: UninitializedBlockPayload<Data>,
+): BlockComponent<Props, Data> {
+  // Require module first and then data. The ordering matters.
+  const moduleMetaData: ModuleMetaData = readMaybeChunk(tuple[1]);
+  const moduleReference: ModuleReference<
+    BlockRenderFunction<Props, Data>,
+  > = resolveModuleReference(moduleMetaData);
+  // TODO: Do this earlier, as the chunk is resolved.
+  preloadModule(moduleReference);
+
+  const moduleExport = requireModule(moduleReference);
+
+  // The ordering here is important because this call might suspend.
+  // We don't want that to prevent the module graph for being initialized.
+  const data: Data = readMaybeChunk(tuple[2]);
+
+  return {
+    $$typeof: REACT_BLOCK_TYPE,
+    _status: -1,
+    _data: data,
+    _render: moduleExport,
+  };
+}
+
+function createLazyBlock<Props, Data>(
+  tuple: UninitializedBlockPayload<Data>,
+): LazyComponent<BlockComponent<Props, Data>, UninitializedBlockPayload<Data>> {
+  const lazyType: LazyComponent<
+    BlockComponent<Props, Data>,
+    UninitializedBlockPayload<Data>,
+  > = {
+    $$typeof: REACT_LAZY_TYPE,
+    _payload: tuple,
+    _init: initializeBlock,
+  };
+  return lazyType;
+}
+
+export function parseModelFromJSON<T>(
+  response: Response<T>,
   targetObj: Object,
   key: string,
   value: JSONValue,
-): any {
-  if (typeof value === 'string' && value[0] === '$') {
-    if (value[1] === '$') {
-      // This was an escaped string value.
-      return value.substring(1);
-    } else {
-      let id = parseInt(value.substring(1), 16);
-      let chunks = response.chunks;
-      let chunk = chunks.get(id);
-      if (!chunk) {
-        chunk = createPendingChunk();
-        chunks.set(id, chunk);
-      } else if (chunk.status === RESOLVED) {
-        return chunk.value;
+): mixed {
+  if (typeof value === 'string') {
+    if (value[0] === '$') {
+      if (value === '$') {
+        return REACT_ELEMENT_TYPE;
+      } else if (value[1] === '$' || value[1] === '@') {
+        // This was an escaped string value.
+        return value.substring(1);
+      } else {
+        const id = parseInt(value.substring(1), 16);
+        const chunks = response.chunks;
+        let chunk = chunks.get(id);
+        if (!chunk) {
+          chunk = createPendingChunk();
+          chunks.set(id, chunk);
+        }
+        return chunk;
       }
-      definePendingProperty(targetObj, key, chunk);
-      return undefined;
+    }
+    if (value === '@') {
+      return REACT_BLOCK_TYPE;
+    }
+  }
+  if (typeof value === 'object' && value !== null) {
+    const tuple: [mixed, mixed, mixed, mixed] = (value: any);
+    switch (tuple[0]) {
+      case REACT_ELEMENT_TYPE: {
+        // TODO: Consider having React just directly accept these arrays as elements.
+        // Or even change the ReactElement type to be an array.
+        return createElement(tuple[1], tuple[2], tuple[3]);
+      }
+      case REACT_BLOCK_TYPE: {
+        // TODO: Consider having React just directly accept these arrays as blocks.
+        return createLazyBlock((tuple: any));
+      }
     }
   }
   return value;
 }
 
-function resolveJSONRow(
-  response: OpaqueResponse,
+export function resolveModelChunk<T, M>(
+  response: Response<T>,
   id: number,
-  json: string,
+  model: M,
 ): void {
-  let model = JSON.parse(json, response.fromJSON);
-  let chunks = response.chunks;
-  let chunk = chunks.get(id);
+  const chunks = response.chunks;
+  const chunk = chunks.get(id);
   if (!chunk) {
     chunks.set(id, createResolvedChunk(model));
   } else {
@@ -210,88 +326,27 @@ function resolveJSONRow(
   }
 }
 
-function processFullRow(response: OpaqueResponse, row: string): void {
-  if (row === '') {
-    return;
-  }
-  let tag = row[0];
-  switch (tag) {
-    case 'J': {
-      let colon = row.indexOf(':', 1);
-      let id = parseInt(row.substring(1, colon), 16);
-      let json = row.substring(colon + 1);
-      resolveJSONRow(response, id, json);
-      return;
-    }
-    case 'E': {
-      let colon = row.indexOf(':', 1);
-      let id = parseInt(row.substring(1, colon), 16);
-      let json = row.substring(colon + 1);
-      let errorInfo = JSON.parse(json);
-      let error = new Error(errorInfo.message);
-      error.stack = errorInfo.stack;
-      let chunks = response.chunks;
-      let chunk = chunks.get(id);
-      if (!chunk) {
-        chunks.set(id, createErrorChunk(error));
-      } else {
-        triggerErrorOnChunk(chunk, error);
-      }
-      return;
-    }
-    default: {
-      // Assume this is the root model.
-      resolveJSONRow(response, 0, row);
-      return;
-    }
-  }
-}
-
-export function processStringChunk(
-  response: OpaqueResponse,
-  chunk: string,
-  offset: number,
+export function resolveErrorChunk<T>(
+  response: Response<T>,
+  id: number,
+  message: string,
+  stack: string,
 ): void {
-  let linebreak = chunk.indexOf('\n', offset);
-  while (linebreak > -1) {
-    let fullrow = response.partialRow + chunk.substring(offset, linebreak);
-    processFullRow(response, fullrow);
-    response.partialRow = '';
-    offset = linebreak + 1;
-    linebreak = chunk.indexOf('\n', offset);
+  const error = new Error(message);
+  error.stack = stack;
+  const chunks = response.chunks;
+  const chunk = chunks.get(id);
+  if (!chunk) {
+    chunks.set(id, createErrorChunk(error));
+  } else {
+    triggerErrorOnChunk(chunk, error);
   }
-  response.partialRow += chunk.substring(offset);
 }
 
-export function processBinaryChunk(
-  response: OpaqueResponse,
-  chunk: Uint8Array,
-): void {
-  if (!supportsBinaryStreams) {
-    throw new Error("This environment don't support binary chunks.");
-  }
-  let stringDecoder = response.stringDecoder;
-  let linebreak = chunk.indexOf(10); // newline
-  while (linebreak > -1) {
-    let fullrow =
-      response.partialRow +
-      readFinalStringChunk(stringDecoder, chunk.subarray(0, linebreak));
-    processFullRow(response, fullrow);
-    response.partialRow = '';
-    chunk = chunk.subarray(linebreak + 1);
-    linebreak = chunk.indexOf(10); // newline
-  }
-  response.partialRow += readPartialStringChunk(stringDecoder, chunk);
-}
-
-export function complete(response: OpaqueResponse): void {
+export function close<T>(response: Response<T>): void {
   // In case there are any remaining unresolved chunks, they won't
   // be resolved now. So we need to issue an error to those.
   // Ideally we should be able to early bail out if we kept a
   // ref count of pending chunks.
   reportGlobalError(response, new Error('Connection closed.'));
-}
-
-export function getModelRoot<T>(response: OpaqueResponse): ReactModelRoot<T> {
-  return response.modelRoot;
 }

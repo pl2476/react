@@ -24,7 +24,7 @@ function writeConfig(renderer, rendererInfo, isServerSupported) {
 
   const serverRenderer = isServerSupported ? renderer : 'custom';
 
-  let ignoredPaths = [];
+  const ignoredPaths = [];
 
   inlinedHostConfigs.forEach(otherRenderer => {
     if (otherRenderer === rendererInfo) {
@@ -51,6 +51,7 @@ function writeConfig(renderer, rendererInfo, isServerSupported) {
 module.name_mapper='ReactFiberHostConfig$$' -> 'forks/ReactFiberHostConfig.${renderer}'
 module.name_mapper='ReactServerStreamConfig$$' -> 'forks/ReactServerStreamConfig.${serverRenderer}'
 module.name_mapper='ReactServerFormatConfig$$' -> 'forks/ReactServerFormatConfig.${serverRenderer}'
+module.name_mapper='ReactFlightServerConfig$$' -> 'forks/ReactFlightServerConfig.${serverRenderer}'
 module.name_mapper='ReactFlightClientHostConfig$$' -> 'forks/ReactFlightClientHostConfig.${serverRenderer}'
     `.trim(),
     )
