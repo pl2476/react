@@ -18,6 +18,7 @@ describe('Component stack trace displaying', () => {
     ReactDOM = require('react-dom');
   });
 
+  // @gate !enableComponentStackLocations || !__DEV__
   it('should provide filenames in stack traces', () => {
     class Component extends React.Component {
       render() {
@@ -88,6 +89,7 @@ describe('Component stack trace displaying', () => {
       'C:\\funny long (path)/index.jsx': 'funny long (path)/index.jsx',
     };
     Object.keys(fileNames).forEach((fileName, i) => {
+      Component.displayName = 'Component ' + i;
       ReactDOM.render(
         <Component __source={{fileName, lineNumber: i}} />,
         container,

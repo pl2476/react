@@ -77,9 +77,7 @@ export type UpdatePayload = Object;
 export type TimeoutHandle = TimeoutID;
 export type NoTimeout = -1;
 
-export type ReactListenerEvent = Object;
-export type ReactListenerMap = Object;
-export type ReactListener = Object;
+export type OpaqueIDType = void;
 
 export type RendererInspectionConfig = $ReadOnly<{|
   // Deprecated. Replaced with getInspectorDataForViewAtPoint.
@@ -185,6 +183,8 @@ class ReactFabricHostComponent {
 
 export * from 'react-reconciler/src/ReactFiberHostConfigWithNoMutation';
 export * from 'react-reconciler/src/ReactFiberHostConfigWithNoHydration';
+export * from 'react-reconciler/src/ReactFiberHostConfigWithNoScopes';
+export * from 'react-reconciler/src/ReactFiberHostConfigWithNoTestSelectors';
 
 export function appendInitialChild(
   parentInstance: Instance,
@@ -303,8 +303,9 @@ export function getPublicInstance(instance: Instance): * {
   return instance.canonical;
 }
 
-export function prepareForCommit(containerInfo: Container): void {
+export function prepareForCommit(containerInfo: Container): null | Object {
   // Noop
+  return null;
 }
 
 export function prepareUpdate(
@@ -486,18 +487,32 @@ export function beforeRemoveInstance(instance: any) {
   // noop
 }
 
-export function registerEvent(event: any, rootContainerInstance: Container) {
+export function isOpaqueHydratingObject(value: mixed): boolean {
+  throw new Error('Not yet implemented');
+}
+
+export function makeOpaqueHydratingObject(
+  attemptToReadValue: () => void,
+): OpaqueIDType {
   throw new Error('Not yet implemented.');
 }
 
-export function mountEventListener(listener: any) {
-  throw new Error('Not yet implemented.');
+export function makeClientId(): OpaqueIDType {
+  throw new Error('Not yet implemented');
 }
 
-export function unmountEventListener(listener: any) {
-  throw new Error('Not yet implemented.');
+export function makeClientIdInDEV(warnOnAccessInDEV: () => void): OpaqueIDType {
+  throw new Error('Not yet implemented');
 }
 
-export function validateEventListenerTarget(target: any, listener: any) {
-  throw new Error('Not yet implemented.');
+export function beforeActiveInstanceBlur() {
+  // noop
+}
+
+export function afterActiveInstanceBlur() {
+  // noop
+}
+
+export function preparePortalMount(portalInstance: Instance): void {
+  // noop
 }

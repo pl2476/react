@@ -316,9 +316,12 @@ export default {
         if (def.node.type !== 'VariableDeclarator') {
           return false;
         }
-        const init = def.node.init;
+        let init = def.node.init;
         if (init == null) {
           return false;
+        }
+        while (init.type === 'TSAsExpression') {
+          init = init.expression;
         }
         // Detect primitive constants
         // const foo = 42
@@ -1426,7 +1429,8 @@ function scanForDeclaredBareFunctions({
  */
 function getDependency(node) {
   if (
-    node.parent.type === 'MemberExpression' &&
+    (node.parent.type === 'MemberExpression' ||
+      node.parent.type === 'OptionalMemberExpression') &&
     node.parent.object === node &&
     node.parent.property.name !== 'current' &&
     !node.parent.computed &&
@@ -1437,6 +1441,12 @@ function getDependency(node) {
     )
   ) {
     return getDependency(node.parent);
+  } else if (
+    node.type === 'MemberExpression' &&
+    node.parent &&
+    node.parent.type === 'AssignmentExpression'
+  ) {
+    return node.object;
   } else {
     return node;
   }
@@ -1447,6 +1457,7 @@ function getDependency(node) {
  * (foo) -> 'foo'
  * foo.(bar) -> 'foo.bar'
  * foo.bar.(baz) -> 'foo.bar.baz'
+ * foo?.(bar) -> 'foo?.bar'
  * Otherwise throw.
  */
 function toPropertyAccessString(node) {
@@ -1456,6 +1467,10 @@ function toPropertyAccessString(node) {
     const object = toPropertyAccessString(node.object);
     const property = toPropertyAccessString(node.property);
     return `${object}.${property}`;
+  } else if (node.type === 'OptionalMemberExpression' && !node.computed) {
+    const object = toPropertyAccessString(node.object);
+    const property = toPropertyAccessString(node.property);
+    return `${object}?.${property}`;
   } else {
     throw new Error(`Unsupported node type: ${node.type}`);
   }
@@ -1495,7 +1510,9 @@ function getReactiveHookCallbackIndex(calleeNode, options) {
       // useImperativeHandle(ref, fn)
       return 1;
     default:
-      if (node === calleeNode && options && options.additionalHooks) {
+      if (node === calleeNode && node.name.match(/use.+Effect/)) {
+        return 0;
+      } else if (node === calleeNode && options && options.additionalHooks) {
         // Allow the user to provide a regular expression which enables the lint to
         // target custom reactive hooks.
         let name;

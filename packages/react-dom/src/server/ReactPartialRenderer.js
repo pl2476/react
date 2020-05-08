@@ -15,7 +15,7 @@ import type {ReactProvider, ReactContext} from 'shared/ReactTypes';
 import * as React from 'react';
 import invariant from 'shared/invariant';
 import getComponentName from 'shared/getComponentName';
-import describeComponentFrame from 'shared/describeComponentFrame';
+import {describeUnknownElementTypeFrameInDEV} from 'shared/ReactComponentStackFrame';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import {
   warnAboutDeprecatedLifecycles,
@@ -28,6 +28,7 @@ import {
 } from 'shared/ReactFeatureFlags';
 
 import {
+  REACT_DEBUG_TRACING_MODE_TYPE,
   REACT_FORWARD_REF_TYPE,
   REACT_FRAGMENT_TYPE,
   REACT_STRICT_MODE_TYPE,
@@ -59,15 +60,15 @@ import {
   prepareToUseHooks,
   finishHooks,
   Dispatcher,
-  currentThreadID,
-  setCurrentThreadID,
+  currentPartialRenderer,
+  setCurrentPartialRenderer,
 } from './ReactPartialRendererHooks';
 import {
   Namespaces,
   getIntrinsicNamespace,
   getChildNamespace,
 } from '../shared/DOMNamespaces';
-import ReactControlledValuePropTypes from '../shared/ReactControlledValuePropTypes';
+import {checkControlledValueProps} from '../shared/ReactControlledValuePropTypes';
 import assertValidProps from '../shared/assertValidProps';
 import dangerousStyleValue from '../shared/dangerousStyleValue';
 import hyphenateStyleName from '../shared/hyphenateStyleName';
@@ -77,6 +78,10 @@ import warnValidStyle from '../shared/warnValidStyle';
 import {validateProperties as validateARIAProperties} from '../shared/ReactDOMInvalidARIAHook';
 import {validateProperties as validateInputProperties} from '../shared/ReactDOMNullInputValuePropHook';
 import {validateProperties as validateUnknownProperties} from '../shared/ReactDOMUnknownPropertyHook';
+
+export type ServerOptions = {
+  identifierPrefix?: string,
+};
 
 // Based on reading the React.Children implementation. TODO: type this somewhere?
 type ReactNode = string | number | ReactElement;
@@ -112,11 +117,11 @@ if (__DEV__) {
   };
 
   describeStackFrame = function(element): string {
-    const source = element._source;
-    const type = element.type;
-    const name = getComponentName(type);
-    const ownerName = null;
-    return describeComponentFrame(name, source, ownerName);
+    return describeUnknownElementTypeFrameInDEV(
+      element.type,
+      element._source,
+      null,
+    );
   };
 
   pushCurrentDebugStack = function(stack: Array<Frame>) {
@@ -725,7 +730,14 @@ class ReactDOMServerRenderer {
   contextValueStack: Array<any>;
   contextProviderStack: ?Array<ReactProvider<any>>; // DEV-only
 
-  constructor(children: mixed, makeStaticMarkup: boolean) {
+  uniqueID: number;
+  identifierPrefix: string;
+
+  constructor(
+    children: mixed,
+    makeStaticMarkup: boolean,
+    options?: ServerOptions,
+  ) {
     const flatChildren = flattenTopLevelChildren(children);
 
     const topFrame: Frame = {
@@ -753,6 +765,11 @@ class ReactDOMServerRenderer {
     this.contextIndex = -1;
     this.contextStack = [];
     this.contextValueStack = [];
+
+    // useOpaqueIdentifier ID
+    this.uniqueID = 0;
+    this.identifierPrefix = (options && options.identifierPrefix) || '';
+
     if (__DEV__) {
       this.contextProviderStack = [];
     }
@@ -836,8 +853,8 @@ class ReactDOMServerRenderer {
       return null;
     }
 
-    const prevThreadID = currentThreadID;
-    setCurrentThreadID(this.threadID);
+    const prevPartialRenderer = currentPartialRenderer;
+    setCurrentPartialRenderer(this);
     const prevDispatcher = ReactCurrentDispatcher.current;
     ReactCurrentDispatcher.current = Dispatcher;
     try {
@@ -934,7 +951,7 @@ class ReactDOMServerRenderer {
       return out[0];
     } finally {
       ReactCurrentDispatcher.current = prevDispatcher;
-      setCurrentThreadID(prevThreadID);
+      setCurrentPartialRenderer(prevPartialRenderer);
     }
   }
 
@@ -1002,6 +1019,7 @@ class ReactDOMServerRenderer {
       }
 
       switch (elementType) {
+        case REACT_DEBUG_TRACING_MODE_TYPE:
         case REACT_STRICT_MODE_TYPE:
         case REACT_PROFILER_TYPE:
         case REACT_SUSPENSE_LIST_TYPE:
@@ -1358,7 +1376,7 @@ class ReactDOMServerRenderer {
     let props = element.props;
     if (tag === 'input') {
       if (__DEV__) {
-        ReactControlledValuePropTypes.checkPropTypes('input', props);
+        checkControlledValueProps('input', props);
 
         if (
           props.checked !== undefined &&
@@ -1410,7 +1428,7 @@ class ReactDOMServerRenderer {
       );
     } else if (tag === 'textarea') {
       if (__DEV__) {
-        ReactControlledValuePropTypes.checkPropTypes('textarea', props);
+        checkControlledValueProps('textarea', props);
         if (
           props.value !== undefined &&
           props.defaultValue !== undefined &&
@@ -1465,7 +1483,7 @@ class ReactDOMServerRenderer {
       });
     } else if (tag === 'select') {
       if (__DEV__) {
-        ReactControlledValuePropTypes.checkPropTypes('select', props);
+        checkControlledValueProps('select', props);
 
         for (let i = 0; i < valuePropNames.length; i++) {
           const propName = valuePropNames[i];

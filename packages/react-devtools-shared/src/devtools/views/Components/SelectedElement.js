@@ -26,6 +26,7 @@ import ViewElementSourceContext from './ViewElementSourceContext';
 import NativeStyleEditor from './NativeStyleEditor';
 import Toggle from '../Toggle';
 import Badge from './Badge';
+import {useHighlightNativeElement} from '../hooks';
 import {
   ComponentFilterElementType,
   ElementTypeClass,
@@ -462,7 +463,7 @@ function InspectedElementView({
   );
 }
 
-// This function is based on packages/shared/describeComponentFrame.js
+// This function is based on describeComponentFrame() in packages/shared/ReactComponentStackFrame
 function formatSourceForDisplay(fileName: string, lineNumber: string) {
   const BEFORE_SLASH_RE = /^(.*)[\\\/]/;
 
@@ -522,6 +523,10 @@ function OwnerView({
   type,
 }: OwnerViewProps) {
   const dispatch = useContext(TreeDispatcherContext);
+  const {
+    highlightNativeElement,
+    clearHighlightNativeElement,
+  } = useHighlightNativeElement();
 
   const handleClick = useCallback(
     () =>
@@ -532,18 +537,26 @@ function OwnerView({
     [dispatch, id],
   );
 
+  const onMouseEnter = () => highlightNativeElement(id);
+
+  const onMouseLeave = clearHighlightNativeElement;
+
   return (
     <Button
       key={id}
       className={styles.OwnerButton}
       disabled={!isInStore}
-      onClick={handleClick}>
-      <span
-        className={`${styles.Owner} ${isInStore ? '' : styles.NotInStore}`}
-        title={displayName}>
-        {displayName}
+      onClick={handleClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}>
+      <span className={styles.OwnerContent}>
+        <span
+          className={`${styles.Owner} ${isInStore ? '' : styles.NotInStore}`}
+          title={displayName}>
+          {displayName}
+        </span>
+        <Badge hocDisplayNames={hocDisplayNames} type={type} />
       </span>
-      <Badge hocDisplayNames={hocDisplayNames} type={type} />
     </Button>
   );
 }

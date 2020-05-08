@@ -8,7 +8,7 @@
  * @flow
  */
 
-import type {Fiber} from 'react-reconciler/src/ReactFiber';
+import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 import type {EventPriority} from 'shared/ReactTypes';
 import type {TopLevelType} from './TopLevelEventTypes';
 
@@ -40,8 +40,10 @@ export type ReactSyntheticEvent = {|
     nativeEventTarget: EventTarget,
   ) => ReactSyntheticEvent,
   isPersistent: () => boolean,
-  _dispatchInstances: null | Array<Fiber | EventTarget> | Fiber | EventTarget,
-  _dispatchListeners: null | Array<Function> | Function,
+  isPropagationStopped: () => boolean,
+  _dispatchInstances?: null | Array<Fiber | null> | Fiber,
+  _dispatchListeners?: null | Array<Function> | Function,
   _targetInst: Fiber,
   type: string,
+  currentTarget: null | EventTarget,
 |};

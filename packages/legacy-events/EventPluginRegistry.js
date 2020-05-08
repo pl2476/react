@@ -11,12 +11,18 @@ import type {DispatchConfig} from './ReactSyntheticEventType';
 import type {
   AnyNativeEvent,
   PluginName,
-  PluginModule,
+  LegacyPluginModule,
+  ModernPluginModule,
 } from './PluginModuleType';
 
 import invariant from 'shared/invariant';
 
-type NamesToPlugins = {[key: PluginName]: PluginModule<AnyNativeEvent>, ...};
+type NamesToPlugins = {
+  [key: PluginName]:
+    | LegacyPluginModule<AnyNativeEvent>
+    | ModernPluginModule<AnyNativeEvent>,
+  ...,
+};
 type EventPluginOrder = null | Array<PluginName>;
 
 /**
@@ -84,7 +90,9 @@ function recomputePluginOrdering(): void {
  */
 function publishEventForPlugin(
   dispatchConfig: DispatchConfig,
-  pluginModule: PluginModule<AnyNativeEvent>,
+  pluginModule:
+    | LegacyPluginModule<AnyNativeEvent>
+    | ModernPluginModule<AnyNativeEvent>,
   eventName: string,
 ): boolean {
   invariant(
@@ -128,7 +136,9 @@ function publishEventForPlugin(
  */
 function publishRegistrationName(
   registrationName: string,
-  pluginModule: PluginModule<AnyNativeEvent>,
+  pluginModule:
+    | LegacyPluginModule<AnyNativeEvent>
+    | ModernPluginModule<AnyNativeEvent>,
   eventName: string,
 ): void {
   invariant(
@@ -239,5 +249,22 @@ export function injectEventPluginsByName(
   }
   if (isOrderingDirty) {
     recomputePluginOrdering();
+  }
+}
+
+export function injectEventPlugins(
+  eventPlugins: [ModernPluginModule<AnyNativeEvent>],
+): void {
+  for (let i = 0; i < eventPlugins.length; i++) {
+    const pluginModule = eventPlugins[i];
+    plugins.push(pluginModule);
+    const publishedEvents = pluginModule.eventTypes;
+    for (const eventName in publishedEvents) {
+      publishEventForPlugin(
+        publishedEvents[eventName],
+        pluginModule,
+        eventName,
+      );
+    }
   }
 }

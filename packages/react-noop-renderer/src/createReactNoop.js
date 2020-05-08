@@ -14,7 +14,7 @@
  * environment.
  */
 
-import type {Fiber} from 'react-reconciler/src/ReactFiber';
+import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 import type {UpdateQueue} from 'react-reconciler/src/ReactUpdateQueue';
 import type {ReactNodeList} from 'shared/ReactTypes';
 import type {RootTag} from 'react-reconciler/src/ReactRootTags';
@@ -153,6 +153,10 @@ function createReactNoop(reconciler: Function, useMutation: boolean) {
       throw new Error('insertBefore() first argument is not an instance.');
     }
     insertInContainerOrInstanceBefore(parentInstance, child, beforeChild);
+  }
+
+  function clearContainer(container: Container): void {
+    container.children.splice(0);
   }
 
   function removeChildFromContainerOrInstance(
@@ -363,7 +367,9 @@ function createReactNoop(reconciler: Function, useMutation: boolean) {
     cancelTimeout: clearTimeout,
     noTimeout: -1,
 
-    prepareForCommit(): void {},
+    prepareForCommit(): null | Object {
+      return null;
+    },
 
     resetAfterCommit(): void {},
 
@@ -439,6 +445,26 @@ function createReactNoop(reconciler: Function, useMutation: boolean) {
     beforeRemoveInstance(instance: any): void {
       // NO-OP
     },
+
+    beforeActiveInstanceBlur() {
+      // NO-OP
+    },
+
+    afterActiveInstanceBlur() {
+      // NO-OP
+    },
+
+    preparePortalMount() {
+      // NO-OP
+    },
+
+    prepareScopeUpdate() {},
+
+    prepareScopeUnmount() {},
+
+    getInstanceFromScope() {
+      throw new Error('Not yet implemented.');
+    },
   };
 
   const hostConfig = useMutation
@@ -488,6 +514,7 @@ function createReactNoop(reconciler: Function, useMutation: boolean) {
         insertInContainerBefore,
         removeChild,
         removeChildFromContainer,
+        clearContainer,
 
         hideInstance(instance: Instance): void {
           instance.hidden = true;
@@ -517,6 +544,7 @@ function createReactNoop(reconciler: Function, useMutation: boolean) {
         supportsPersistence: true,
 
         cloneInstance,
+        clearContainer,
 
         createContainerChildSet(
           container: Container,

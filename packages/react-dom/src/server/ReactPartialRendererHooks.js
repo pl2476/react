@@ -7,11 +7,8 @@
  * @flow
  */
 
-import type {
-  Dispatcher as DispatcherType,
-  TimeoutConfig,
-} from 'react-reconciler/src/ReactFiberHooks';
-import type {ThreadID} from './ReactThreadIDAllocator';
+import type {Dispatcher as DispatcherType} from 'react-reconciler/src/ReactInternalTypes';
+
 import type {
   MutableSource,
   MutableSourceGetSnapshotFn,
@@ -20,7 +17,7 @@ import type {
   ReactEventResponderListener,
 } from 'shared/ReactTypes';
 import type {SuspenseConfig} from 'react-reconciler/src/ReactFiberSuspenseConfig';
-import type {ReactDOMListenerMap} from '../shared/ReactDOMTypes';
+import type PartialRenderer from './ReactPartialRenderer';
 
 import {validateContextBounds} from './ReactPartialRendererContext';
 
@@ -45,6 +42,12 @@ type Hook = {|
   queue: UpdateQueue<any> | null,
   next: Hook | null,
 |};
+
+type TimeoutConfig = {|
+  timeoutMs: number,
+|};
+
+type OpaqueIDType = string;
 
 let currentlyRenderingComponent: Object | null = null;
 let firstWorkInProgressHook: Hook | null = null;
@@ -223,7 +226,7 @@ function readContext<T>(
   context: ReactContext<T>,
   observedBits: void | number | boolean,
 ): T {
-  const threadID = currentThreadID;
+  const threadID = currentPartialRenderer.threadID;
   validateContextBounds(context, threadID);
   if (__DEV__) {
     if (isInHookUserCodeInDev) {
@@ -246,7 +249,7 @@ function useContext<T>(
     currentHookNameInDev = 'useContext';
   }
   resolveCurrentlyRenderingComponent();
-  const threadID = currentThreadID;
+  const threadID = currentPartialRenderer.threadID;
   validateContextBounds(context, threadID);
   return context[threadID];
 }
@@ -453,8 +456,7 @@ export function useCallback<T>(
   callback: T,
   deps: Array<mixed> | void | null,
 ): T {
-  // Callbacks are passed as they are in the server environment.
-  return callback;
+  return useMemo(() => callback, deps);
 }
 
 function useResponder(responder, props): ReactEventResponderListener<any, any> {
@@ -491,19 +493,19 @@ function useTransition(
   return [startTransition, false];
 }
 
-function useEvent(event: any): ReactDOMListenerMap {
-  return {
-    clear: noop,
-    setListener: noop,
-  };
+function useOpaqueIdentifier(): OpaqueIDType {
+  return (
+    (currentPartialRenderer.identifierPrefix || '') +
+    'R:' +
+    (currentPartialRenderer.uniqueID++).toString(36)
+  );
 }
 
 function noop(): void {}
 
-export let currentThreadID: ThreadID = 0;
-
-export function setCurrentThreadID(threadID: ThreadID) {
-  currentThreadID = threadID;
+export let currentPartialRenderer: PartialRenderer = (null: any);
+export function setCurrentPartialRenderer(renderer: PartialRenderer) {
+  currentPartialRenderer = renderer;
 }
 
 export const Dispatcher: DispatcherType = {
@@ -524,7 +526,7 @@ export const Dispatcher: DispatcherType = {
   useResponder,
   useDeferredValue,
   useTransition,
-  useEvent,
+  useOpaqueIdentifier,
   // Subscriptions are not setup in a server environment.
   useMutableSource,
 };

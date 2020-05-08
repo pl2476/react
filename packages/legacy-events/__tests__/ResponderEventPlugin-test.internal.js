@@ -10,7 +10,7 @@
 'use strict';
 
 const {HostComponent} = require('react-reconciler/src/ReactWorkTags');
-const {PLUGIN_EVENT_SYSTEM} = require('legacy-events/EventSystemFlags');
+const {PLUGIN_EVENT_SYSTEM} = require('react-dom/src/events/EventSystemFlags');
 
 let EventBatching;
 let EventPluginUtils;
@@ -404,11 +404,10 @@ describe('ResponderEventPlugin', () => {
   beforeEach(() => {
     jest.resetModules();
 
-    const ReactDOMUnstableNativeDependencies = require('react-dom/unstable-native-dependencies');
     EventBatching = require('legacy-events/EventBatching');
     EventPluginUtils = require('legacy-events/EventPluginUtils');
-    ResponderEventPlugin =
-      ReactDOMUnstableNativeDependencies.ResponderEventPlugin;
+    ResponderEventPlugin = require('legacy-events/ResponderEventPlugin')
+      .default;
 
     deleteAllListeners(GRANDPARENT_INST);
     deleteAllListeners(PARENT_INST);

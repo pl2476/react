@@ -7,7 +7,8 @@
  * @flow
  */
 
-import type {Fiber} from 'react-reconciler/src/ReactFiber';
+import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
+import type {ReactScopeInstance} from 'shared/ReactTypes';
 import type {
   Container,
   TextInstance,
@@ -15,7 +16,7 @@ import type {
   SuspenseInstance,
   Props,
 } from './ReactDOMHostConfig';
-import type {ReactDOMListener} from '../shared/ReactDOMTypes';
+import type {DOMTopLevelEventType} from 'legacy-events/TopLevelEventTypes';
 
 import {
   HostComponent,
@@ -23,21 +24,33 @@ import {
   HostRoot,
   SuspenseComponent,
 } from 'react-reconciler/src/ReactWorkTags';
-import invariant from 'shared/invariant';
 
 import {getParentSuspenseInstance} from './ReactDOMHostConfig';
+
+import invariant from 'shared/invariant';
+import {enableScopeAPI} from 'shared/ReactFeatureFlags';
 
 const randomKey = Math.random()
   .toString(36)
   .slice(2);
 const internalInstanceKey = '__reactFiber$' + randomKey;
-const internalEventHandlersKey = '__reactEvents$' + randomKey;
+const internalPropsKey = '__reactProps$' + randomKey;
 const internalContainerInstanceKey = '__reactContainer$' + randomKey;
-const internalEventListenersKey = '__reactListeners$' + randomKey;
+const internalEventHandlersKey = '__reactEvents$' + randomKey;
+
+export type ElementListenerMap = Map<
+  DOMTopLevelEventType | string,
+  ElementListenerMapEntry,
+>;
+
+export type ElementListenerMapEntry = {
+  passive: void | boolean,
+  listener: any => void,
+};
 
 export function precacheFiberNode(
   hostInst: Fiber,
-  node: Instance | TextInstance | SuspenseInstance,
+  node: Instance | TextInstance | SuspenseInstance | ReactScopeInstance,
 ): void {
   (node: any)[internalInstanceKey] = hostInst;
 }
@@ -178,27 +191,29 @@ export function getNodeFromInstance(inst: Fiber): Instance | TextInstance {
 export function getFiberCurrentPropsFromNode(
   node: Instance | TextInstance | SuspenseInstance,
 ): Props {
-  return (node: any)[internalEventHandlersKey] || null;
+  return (node: any)[internalPropsKey] || null;
 }
 
 export function updateFiberProps(
   node: Instance | TextInstance | SuspenseInstance,
   props: Props,
 ): void {
-  (node: any)[internalEventHandlersKey] = props;
+  (node: any)[internalPropsKey] = props;
 }
 
-// This is used for useEvent listeners
-export function getListenersFromTarget(
-  target: EventTarget,
-): null | Set<ReactDOMListener> {
-  return (target: any)[internalEventListenersKey] || null;
+export function getEventListenerMap(node: EventTarget): ElementListenerMap {
+  let elementListenerMap = (node: any)[internalEventHandlersKey];
+  if (elementListenerMap === undefined) {
+    elementListenerMap = (node: any)[internalEventHandlersKey] = new Map();
+  }
+  return elementListenerMap;
 }
 
-// This is used for useEvent listeners
-export function initListenersSet(
-  target: EventTarget,
-  value: Set<ReactDOMListener>,
-): void {
-  (target: any)[internalEventListenersKey] = value;
+export function getFiberFromScopeInstance(
+  scope: ReactScopeInstance,
+): null | Fiber {
+  if (enableScopeAPI) {
+    return (scope: any)[internalInstanceKey] || null;
+  }
+  return null;
 }

@@ -9,7 +9,7 @@
 
 import type {AnyNativeEvent} from 'legacy-events/PluginModuleType';
 import type {EventPriority} from 'shared/ReactTypes';
-import type {FiberRoot} from 'react-reconciler/src/ReactFiberRoot';
+import type {FiberRoot} from 'react-reconciler/src/ReactInternalTypes';
 import type {Container, SuspenseInstance} from '../client/ReactDOMHostConfig';
 import type {DOMTopLevelEventType} from 'legacy-events/TopLevelEventTypes';
 
@@ -17,10 +17,6 @@ import type {DOMTopLevelEventType} from 'legacy-events/TopLevelEventTypes';
 // CommonJS interop named imports.
 import * as Scheduler from 'scheduler';
 
-import {
-  discreteUpdates,
-  flushDiscreteUpdatesIfNeeded,
-} from 'legacy-events/ReactGenericBatching';
 import {DEPRECATED_dispatchEventForResponderEventSystem} from './DeprecatedDOMEventResponderSystem';
 import {
   isReplayableDiscreteEvent,
@@ -37,31 +33,18 @@ import {
 import {HostRoot, SuspenseComponent} from 'react-reconciler/src/ReactWorkTags';
 import {
   type EventSystemFlags,
+  LEGACY_FB_SUPPORT,
   PLUGIN_EVENT_SYSTEM,
   RESPONDER_EVENT_SYSTEM,
-  IS_PASSIVE,
-  IS_ACTIVE,
-  PASSIVE_NOT_SUPPORTED,
-  LEGACY_FB_SUPPORT,
-} from 'legacy-events/EventSystemFlags';
+} from './EventSystemFlags';
 
-import {
-  addEventBubbleListener,
-  addEventCaptureListener,
-  addEventCaptureListenerWithPassiveFlag,
-  addEventBubbleListenerWithPassiveFlag,
-  removeEventListener,
-} from './EventListener';
 import getEventTarget from './getEventTarget';
 import {getClosestInstanceFromNode} from '../client/ReactDOMComponentTree';
-import {getRawEventName} from './DOMTopLevelEventTypes';
-import {passiveBrowserEventsSupported} from './checkPassiveEvents';
 
 import {
   enableDeprecatedFlareAPI,
   enableModernEventSystem,
   enableLegacyFBSupport,
-  enableUseEventAPI,
 } from 'shared/ReactFeatureFlags';
 import {
   UserBlockingEvent,
@@ -71,6 +54,10 @@ import {
 import {getEventPriorityForPluginSystem} from './DOMEventProperties';
 import {dispatchEventForLegacyPluginEventSystem} from './DOMLegacyEventPluginSystem';
 import {dispatchEventForPluginEventSystem} from './DOMModernPluginEventSystem';
+import {
+  flushDiscreteUpdatesIfNeeded,
+  discreteUpdates,
+} from './ReactDOMUpdateBatching';
 
 const {
   unstable_UserBlockingPriority: UserBlockingPriority,
@@ -88,60 +75,29 @@ export function isEnabled() {
   return _enabled;
 }
 
-export function addResponderEventSystemEvent(
-  document: Document,
-  topLevelType: string,
-  passive: boolean,
-): any => void {
-  let eventFlags = RESPONDER_EVENT_SYSTEM;
-
-  // If passive option is not supported, then the event will be
-  // active and not passive, but we flag it as using not being
-  // supported too. This way the responder event plugins know,
-  // and can provide polyfills if needed.
-  if (passive) {
-    if (passiveBrowserEventsSupported) {
-      eventFlags |= IS_PASSIVE;
-    } else {
-      eventFlags |= IS_ACTIVE;
-      eventFlags |= PASSIVE_NOT_SUPPORTED;
-      passive = false;
-    }
-  } else {
-    eventFlags |= IS_ACTIVE;
-  }
-  // Check if interactive and wrap in discreteUpdates
-  const listener = dispatchEvent.bind(
-    null,
-    ((topLevelType: any): DOMTopLevelEventType),
-    eventFlags,
-    document,
-  );
-  if (passiveBrowserEventsSupported) {
-    return addEventCaptureListenerWithPassiveFlag(
-      document,
-      topLevelType,
-      listener,
-      passive,
-    );
-  } else {
-    return addEventCaptureListener(document, topLevelType, listener);
-  }
-}
-
-export function addTrappedEventListener(
+export function createEventListenerWrapper(
   targetContainer: EventTarget,
   topLevelType: DOMTopLevelEventType,
-  capture: boolean,
-  isDeferredListenerForLegacyFBSupport?: boolean,
-  passive?: boolean,
+  eventSystemFlags: EventSystemFlags,
+): Function {
+  return dispatchEvent.bind(
+    null,
+    topLevelType,
+    eventSystemFlags,
+    targetContainer,
+  );
+}
+
+export function createEventListenerWrapperWithPriority(
+  targetContainer: EventTarget,
+  topLevelType: DOMTopLevelEventType,
+  eventSystemFlags: EventSystemFlags,
   priority?: EventPriority,
-): any => void {
+): Function {
   const eventPriority =
     priority === undefined
       ? getEventPriorityForPluginSystem(topLevelType)
       : priority;
-  let listener;
   let listenerWrapper;
   switch (eventPriority) {
     case DiscreteEvent:
@@ -155,111 +111,12 @@ export function addTrappedEventListener(
       listenerWrapper = dispatchEvent;
       break;
   }
-  // If passive option is not supported, then the event will be
-  // active and not passive.
-  if (passive === true && !passiveBrowserEventsSupported) {
-    passive = false;
-  }
-  const eventSystemFlags =
-    enableLegacyFBSupport && isDeferredListenerForLegacyFBSupport
-      ? PLUGIN_EVENT_SYSTEM | LEGACY_FB_SUPPORT
-      : PLUGIN_EVENT_SYSTEM;
-
-  listener = listenerWrapper.bind(
+  return listenerWrapper.bind(
     null,
     topLevelType,
     eventSystemFlags,
     targetContainer,
   );
-
-  // When the targetContainer is null, it means that the container
-  // target is null, but really we need a real DOM node to attach to.
-  // In this case, we fallback to the "document" node, but leave the
-  // targetContainer (which is bound in the above function) to null.
-  // Really, this only happens for TestUtils.Simulate, so when we
-  // remove that support, we can remove this block of code.
-  if (targetContainer === null) {
-    targetContainer = document;
-  }
-
-  targetContainer =
-    enableLegacyFBSupport && isDeferredListenerForLegacyFBSupport
-      ? (targetContainer: any).ownerDocument
-      : targetContainer;
-
-  const rawEventName = getRawEventName(topLevelType);
-
-  let unsubscribeListener;
-  // When legacyFBSupport is enabled, it's for when we
-  // want to add a one time event listener to a container.
-  // This should only be used with enableLegacyFBSupport
-  // due to requirement to provide compatibility with
-  // internal FB www event tooling. This works by removing
-  // the event listener as soon as it is invoked. We could
-  // also attempt to use the {once: true} param on
-  // addEventListener, but that requires support and some
-  // browsers do not support this today, and given this is
-  // to support legacy code patterns, it's likely they'll
-  // need support for such browsers.
-  if (enableLegacyFBSupport && isDeferredListenerForLegacyFBSupport) {
-    const originalListener = listener;
-    listener = function(...p) {
-      try {
-        return originalListener.apply(this, p);
-      } finally {
-        removeEventListener(
-          targetContainer,
-          rawEventName,
-          unsubscribeListener,
-          capture,
-        );
-      }
-    };
-  }
-  if (capture) {
-    if (enableUseEventAPI && passive !== undefined) {
-      // This is only used with passive is either true or false.
-      unsubscribeListener = addEventCaptureListenerWithPassiveFlag(
-        targetContainer,
-        rawEventName,
-        listener,
-        passive,
-      );
-    } else {
-      unsubscribeListener = addEventCaptureListener(
-        targetContainer,
-        rawEventName,
-        listener,
-      );
-    }
-  } else {
-    if (enableUseEventAPI && passive !== undefined) {
-      // This is only used with passive is either true or false.
-      unsubscribeListener = addEventBubbleListenerWithPassiveFlag(
-        targetContainer,
-        rawEventName,
-        listener,
-        passive,
-      );
-    } else {
-      unsubscribeListener = addEventBubbleListener(
-        targetContainer,
-        rawEventName,
-        listener,
-      );
-    }
-  }
-  return unsubscribeListener;
-}
-
-export function removeTrappedEventListener(
-  targetContainer: EventTarget,
-  topLevelType: DOMTopLevelEventType,
-  capture: boolean,
-  listener: any => void,
-): void {
-  const rawEventName = getRawEventName(topLevelType);
-  removeEventListener(targetContainer, rawEventName, listener, capture);
 }
 
 function dispatchDiscreteEvent(
@@ -268,7 +125,14 @@ function dispatchDiscreteEvent(
   container,
   nativeEvent,
 ) {
-  flushDiscreteUpdatesIfNeeded(nativeEvent.timeStamp);
+  if (
+    !enableLegacyFBSupport ||
+    // If we have Legacy FB support, it means we've already
+    // flushed for this event and we don't need to do it again.
+    (eventSystemFlags & LEGACY_FB_SUPPORT) === 0
+  ) {
+    flushDiscreteUpdatesIfNeeded(nativeEvent.timeStamp);
+  }
   discreteUpdates(
     dispatchEvent,
     topLevelType,
@@ -299,7 +163,7 @@ function dispatchUserBlockingUpdate(
 export function dispatchEvent(
   topLevelType: DOMTopLevelEventType,
   eventSystemFlags: EventSystemFlags,
-  targetContainer: null | EventTarget,
+  targetContainer: EventTarget,
   nativeEvent: AnyNativeEvent,
 ): void {
   if (!_enabled) {
@@ -415,7 +279,7 @@ export function dispatchEvent(
 export function attemptToDispatchEvent(
   topLevelType: DOMTopLevelEventType,
   eventSystemFlags: EventSystemFlags,
-  targetContainer: EventTarget | null,
+  targetContainer: EventTarget,
   nativeEvent: AnyNativeEvent,
 ): null | Container | SuspenseInstance {
   // TODO: Warn if _enabled is false.
