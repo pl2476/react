@@ -80,12 +80,7 @@ import invariant from 'shared/invariant';
 import shallowEqual from 'shared/shallowEqual';
 import getComponentName from 'shared/getComponentName';
 import ReactStrictModeWarnings from './ReactStrictModeWarnings.new';
-import {
-  REACT_ELEMENT_TYPE,
-  REACT_LAZY_TYPE,
-  REACT_LEGACY_HIDDEN_TYPE,
-  getIteratorFn,
-} from 'shared/ReactSymbols';
+import {REACT_LAZY_TYPE, getIteratorFn} from 'shared/ReactSymbols';
 import {
   getCurrentFiberOwnerNameInDevOrNull,
   setIsRendering,
@@ -112,6 +107,7 @@ import {
   SyncLane,
   OffscreenLane,
   DefaultHydrationLane,
+  NoTimestamp,
   includesSomeLane,
   laneToLanes,
   removeLanes,
@@ -127,7 +123,6 @@ import {
 } from './ReactTypeOfMode';
 import {
   shouldSetTextContent,
-  shouldDeprioritizeSubtree,
   isSuspenseInstancePending,
   isSuspenseInstanceFallback,
   registerSuspenseInstanceRetry,
@@ -170,6 +165,7 @@ import {
   reenterHydrationStateFromDehydratedSuspenseInstance,
   resetHydrationState,
   tryToClaimNextHydratableInstance,
+  getIsHydrating,
   warnIfHydrating,
 } from './ReactFiberHydrationContext.new';
 import {
@@ -571,7 +567,21 @@ function updateOffscreenComponent(
     current !== null ? current.memoizedState : null;
 
   if (nextProps.mode === 'hidden') {
-    if (!includesSomeLane(renderLanes, (OffscreenLane: Lane))) {
+    if ((workInProgress.mode & ConcurrentMode) === NoMode) {
+      // In legacy sync mode, don't defer the subtree. Render it now.
+      // TODO: Figure out what we should do in Blocking mode.
+      const nextState: OffscreenState = {
+        baseLanes: NoLanes,
+      };
+      workInProgress.memoizedState = nextState;
+      pushRenderLanes(workInProgress, renderLanes);
+    } else if (
+      !includesSomeLane(renderLanes, (OffscreenLane: Lane)) ||
+      // Server renderer does not render hidden subtrees, so if we're hydrating
+      // we should always bail out and schedule a subsequent render pass, to
+      // force a client render. Even if we're already at Offscreen priority.
+      (current === null && getIsHydrating())
+    ) {
       let nextBaseLanes;
       if (prevState !== null) {
         const prevBaseLanes = prevState.baseLanes;
@@ -1120,26 +1130,6 @@ function updateHostComponent(
   }
 
   markRef(current, workInProgress);
-
-  if (
-    (workInProgress.mode & ConcurrentMode) !== NoMode &&
-    nextProps.hasOwnProperty('hidden')
-  ) {
-    const wrappedChildren = {
-      $$typeof: REACT_ELEMENT_TYPE,
-      type: REACT_LEGACY_HIDDEN_TYPE,
-      key: null,
-      ref: null,
-      props: {
-        children: nextChildren,
-        // Check the host config to see if the children are offscreen/hidden.
-        mode: shouldDeprioritizeSubtree(type, nextProps) ? 'hidden' : 'visible',
-      },
-      _owner: __DEV__ ? {} : null,
-    };
-    nextChildren = wrappedChildren;
-  }
-
   reconcileChildren(current, workInProgress, nextChildren, renderLanes);
   return workInProgress.child;
 }
@@ -2301,7 +2291,9 @@ function updateDehydratedSuspenseComponent(
         // is one of the very rare times where we mutate the current tree
         // during the render phase.
         suspenseState.retryLane = attemptHydrationAtLane;
-        scheduleUpdateOnFiber(current, attemptHydrationAtLane);
+        // TODO: Ideally this would inherit the event time of the current render
+        const eventTime = NoTimestamp;
+        scheduleUpdateOnFiber(current, attemptHydrationAtLane, eventTime);
       } else {
         // We have already tried to ping at a higher priority than we're rendering with
         // so if we got here, we must have failed to hydrate at those levels. We must

@@ -27,6 +27,7 @@ export const {
   enableLegacyFBSupport,
   enableDebugTracing,
   deferRenderPhaseUpdateToNextBatch,
+  disableHiddenPropDeprioritization,
 } = dynamicFeatureFlags;
 
 // On WWW, __EXPERIMENTAL__ is used for a new modern build.
@@ -56,6 +57,8 @@ export const disableJavaScriptURLs = true;
 export const disableModulePatternComponents = true;
 
 export const enableDeprecatedFlareAPI = true;
+
+export const enableCreateEventHandleAPI = true;
 
 export const enableFundamentalAPI = false;
 

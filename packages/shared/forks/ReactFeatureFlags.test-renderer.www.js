@@ -26,6 +26,7 @@ export const disableInputAttributeSyncing = false;
 export const enableDeprecatedFlareAPI = true;
 export const enableFundamentalAPI = false;
 export const enableScopeAPI = true;
+export const enableCreateEventHandleAPI = false;
 export const warnAboutUnmockedScheduler = true;
 export const enableSuspenseCallback = true;
 export const warnAboutDefaultPropsOnFunctionComponents = false;
@@ -46,6 +47,7 @@ export const enableFilterEmptyStringAttributesDOM = false;
 
 export const enableNewReconciler = false;
 export const deferRenderPhaseUpdateToNextBatch = true;
+export const disableHiddenPropDeprioritization = true;
 
 // Flow magic to verify the exports of this file match the original version.
 // eslint-disable-next-line no-unused-vars

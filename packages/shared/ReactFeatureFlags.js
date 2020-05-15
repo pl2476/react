@@ -57,6 +57,9 @@ export const enableFundamentalAPI = false;
 // Experimental Scope support.
 export const enableScopeAPI = false;
 
+// Experimental Create Event Handle API.
+export const enableCreateEventHandleAPI = false;
+
 // New API for JSX transforms to target - https://github.com/reactjs/rfcs/pull/107
 
 // We will enforce mocking scheduler with scheduler/unstable_mock at some point. (v17?)
@@ -135,3 +138,6 @@ export const enableLegacyFBSupport = false;
 // expiration time is currently rendering. Remove this flag once we have
 // migrated to the new behavior.
 export const deferRenderPhaseUpdateToNextBatch = true;
+
+// Flag used by www build so we can log occurrences of legacy hidden API
+export const disableHiddenPropDeprioritization = true;
