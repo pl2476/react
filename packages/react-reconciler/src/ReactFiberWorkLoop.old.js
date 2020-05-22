@@ -74,6 +74,7 @@ import {
   warnsIfNotActing,
   beforeActiveInstanceBlur,
   afterActiveInstanceBlur,
+  clearContainer,
 } from './ReactFiberHostConfig';
 
 import {
@@ -207,13 +208,14 @@ const {
 
 type ExecutionContext = number;
 
-const NoContext = /*                    */ 0b000000;
-const BatchedContext = /*               */ 0b000001;
-const EventContext = /*                 */ 0b000010;
-const DiscreteEventContext = /*         */ 0b000100;
-const LegacyUnbatchedContext = /*       */ 0b001000;
-const RenderContext = /*                */ 0b010000;
-const CommitContext = /*                */ 0b100000;
+export const NoContext = /*             */ 0b0000000;
+const BatchedContext = /*               */ 0b0000001;
+const EventContext = /*                 */ 0b0000010;
+const DiscreteEventContext = /*         */ 0b0000100;
+const LegacyUnbatchedContext = /*       */ 0b0001000;
+const RenderContext = /*                */ 0b0010000;
+const CommitContext = /*                */ 0b0100000;
+export const RetryAfterError = /*       */ 0b1000000;
 
 type RootExitStatus = 0 | 1 | 2 | 3 | 4 | 5;
 const RootIncomplete = 0;
@@ -728,6 +730,15 @@ function performConcurrentWorkOnRoot(root, didTimeout) {
 
   if (exitStatus !== RootIncomplete) {
     if (exitStatus === RootErrored) {
+      executionContext |= RetryAfterError;
+
+      // If an error occurred during hydration,
+      // discard server response and fall back to client side render.
+      if (root.hydrate) {
+        root.hydrate = false;
+        clearContainer(root.containerInfo);
+      }
+
       // If something threw an error, try rendering one more time. We'll
       // render synchronously to block concurrent data mutations, and we'll
       // render at Idle (or lower) so that all pending updates are included.
@@ -1011,6 +1022,15 @@ function performSyncWorkOnRoot(root) {
   let exitStatus = renderRootSync(root, expirationTime);
 
   if (root.tag !== LegacyRoot && exitStatus === RootErrored) {
+    executionContext |= RetryAfterError;
+
+    // If an error occurred during hydration,
+    // discard server response and fall back to client side render.
+    if (root.hydrate) {
+      root.hydrate = false;
+      clearContainer(root.containerInfo);
+    }
+
     // If something threw an error, try rendering one more time. We'll
     // render synchronously to block concurrent data mutations, and we'll
     // render at Idle (or lower) so that all pending updates are included.
@@ -1049,6 +1069,10 @@ export function flushRoot(root: FiberRoot, expirationTime: ExpirationTime) {
   if ((executionContext & (RenderContext | CommitContext)) === NoContext) {
     flushSyncCallbackQueue();
   }
+}
+
+export function getExecutionContext(): ExecutionContext {
+  return executionContext;
 }
 
 export function flushDiscreteUpdates() {
@@ -1643,13 +1667,14 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
         stopProfilerTimerIfRunningAndRecordDelta(completedWork, false);
       }
       resetCurrentDebugFiberInDEV();
-      resetChildExpirationTime(completedWork);
 
       if (next !== null) {
         // Completing this fiber spawned new work. Work on that next.
         workInProgress = next;
         return;
       }
+
+      resetChildExpirationTime(completedWork);
 
       if (
         returnFiber !== null &&
@@ -1697,6 +1722,16 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
 
       // Because this fiber did not complete, don't reset its expiration time.
 
+      if (next !== null) {
+        // If completing this work spawned new work, do that next. We'll come
+        // back here again.
+        // Since we're restarting, remove anything that is not a host effect
+        // from the effect tag.
+        next.effectTag &= HostEffectMask;
+        workInProgress = next;
+        return;
+      }
+
       if (
         enableProfilerTimer &&
         (completedWork.mode & ProfileMode) !== NoMode
@@ -1712,16 +1747,6 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
           child = child.sibling;
         }
         completedWork.actualDuration = actualDuration;
-      }
-
-      if (next !== null) {
-        // If completing this work spawned new work, do that next. We'll come
-        // back here again.
-        // Since we're restarting, remove anything that is not a host effect
-        // from the effect tag.
-        next.effectTag &= HostEffectMask;
-        workInProgress = next;
-        return;
       }
 
       if (returnFiber !== null) {
@@ -1774,7 +1799,7 @@ function resetChildExpirationTime(completedWork: Fiber) {
     // In profiling mode, resetChildExpirationTime is also used to reset
     // profiler durations.
     let actualDuration = completedWork.actualDuration;
-    let treeBaseDuration = completedWork.selfBaseDuration;
+    let treeBaseDuration = ((completedWork.selfBaseDuration: any): number);
 
     // When a fiber is cloned, its actualDuration is reset to 0. This value will
     // only be updated if work is done on the fiber (i.e. it doesn't bailout).
@@ -1803,6 +1828,18 @@ function resetChildExpirationTime(completedWork: Fiber) {
       treeBaseDuration += child.treeBaseDuration;
       child = child.sibling;
     }
+
+    const isTimedOutSuspense =
+      completedWork.tag === SuspenseComponent &&
+      completedWork.memoizedState !== null;
+    if (isTimedOutSuspense) {
+      // Don't count time spent in a timed out Suspense subtree as part of the base duration.
+      const primaryChildFragment = completedWork.child;
+      if (primaryChildFragment !== null) {
+        treeBaseDuration -= ((primaryChildFragment.treeBaseDuration: any): number);
+      }
+    }
+
     completedWork.actualDuration = actualDuration;
     completedWork.treeBaseDuration = treeBaseDuration;
   } else {
@@ -2088,6 +2125,9 @@ function commitRootImpl(root, renderPriorityLevel) {
     while (nextEffect !== null) {
       const nextNextEffect = nextEffect.nextEffect;
       nextEffect.nextEffect = null;
+      if (nextEffect.effectTag & Deletion) {
+        detachFiberAfterEffects(nextEffect);
+      }
       nextEffect = nextNextEffect;
     }
   }
@@ -2582,6 +2622,9 @@ function flushPassiveEffectsImpl() {
     const nextNextEffect = effect.nextEffect;
     // Remove nextEffect pointer to assist GC
     effect.nextEffect = null;
+    if (effect.effectTag & Deletion) {
+      detachFiberAfterEffects(effect);
+    }
     effect = nextNextEffect;
   }
 
@@ -3698,4 +3741,8 @@ export function act(callback: () => Thenable<mixed>): Thenable<void> {
       },
     };
   }
+}
+
+function detachFiberAfterEffects(fiber: Fiber): void {
+  fiber.sibling = null;
 }
